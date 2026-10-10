@@ -1,17 +1,87 @@
 // Verify webhook calls from the support worker in your backend.
 // Header: X-Yunidesk-Signature: t=<ms>,v1=<hex HMAC-SHA256 of "<t>.<raw body>">
+// While a secret is being rolled the header carries one v1 per active secret.
 
 export type WebhookEventName =
   | "conversation.created"
   | "message.created"
   | "conversation.updated"
   | "conversation.unread_reply"
-  | "conversation.rated";
+  | "conversation.rated"
+  /** Sent by "Send test event"; carries no data. */
+  | "ping";
+
+export const WEBHOOK_EVENT_NAMES: readonly Exclude<WebhookEventName, "ping">[] = [
+  "conversation.created",
+  "message.created",
+  "conversation.updated",
+  "conversation.unread_reply",
+  "conversation.rated",
+];
 
 export interface WebhookPayload<T = unknown> {
+  /** Unique per event (`evt_…`), identical across retries: use it to drop duplicates. */
+  id: string;
   event: WebhookEventName;
   createdAt: number;
   data: T;
+}
+
+/** Who caused an event. Bots are API keys acting as teammates. */
+export interface WebhookActor {
+  type: "contact" | "agent" | "bot" | "system";
+  id: string | null;
+}
+
+export interface WebhookContactSummary {
+  id: string;
+  /** Your user id, when the contact was identified with a signed token. */
+  externalId: string | null;
+  email: string | null;
+  name: string | null;
+}
+
+export interface ConversationCreatedData {
+  conversationId: string;
+  contactId: string;
+  channel: string;
+  contact: WebhookContactSummary;
+}
+
+export interface MessageCreatedData {
+  conversationId: string;
+  contactId: string;
+  actor: WebhookActor;
+  contact: WebhookContactSummary;
+  message: {
+    id: string;
+    authorType: "contact" | "agent" | "system";
+    agentId: string | null;
+    body: string;
+    attachmentCount: number;
+    createdAt: number;
+  };
+}
+
+export interface ConversationUpdatedData {
+  conversationId: string;
+  contactId: string;
+  actor: WebhookActor;
+  status: "open" | "snoozed" | "resolved";
+  assigneeId: string | null;
+}
+
+export interface UnreadReplyData {
+  conversationId: string;
+  contact: WebhookContactSummary;
+  agentName: string | null;
+  preview: string | null;
+}
+
+export interface ConversationRatedData {
+  conversationId: string;
+  score: 1 | 2 | 3;
+  comment: string | null;
 }
 
 const encoder = new TextEncoder();
@@ -24,15 +94,14 @@ export async function verifyWebhookSignature(
   options: { toleranceMs?: number; now?: number } = {},
 ): Promise<boolean> {
   if (!signatureHeader) return false;
-  const parts = Object.fromEntries(
-    signatureHeader.split(",").map((part) => {
-      const [key, ...rest] = part.trim().split("=");
-      return [key, rest.join("=")];
-    }),
-  );
-  const timestamp = Number(parts.t);
-  const given = parts.v1;
-  if (!Number.isFinite(timestamp) || !given) return false;
+  let timestamp = Number.NaN;
+  const candidates: string[] = [];
+  for (const part of signatureHeader.split(",")) {
+    const [key, ...rest] = part.trim().split("=");
+    if (key === "t") timestamp = Number(rest.join("="));
+    else if (key === "v1") candidates.push(rest.join("="));
+  }
+  if (!Number.isFinite(timestamp) || candidates.length === 0) return false;
   const now = options.now ?? Date.now();
   if (Math.abs(now - timestamp) > (options.toleranceMs ?? 5 * 60 * 1000)) return false;
 
@@ -41,8 +110,13 @@ export async function verifyWebhookSignature(
   ]);
   const signature = new Uint8Array(await crypto.subtle.sign("HMAC", key, encoder.encode(`${timestamp}.${rawBody}`)));
   const expected = Array.from(signature, (b) => b.toString(16).padStart(2, "0")).join("");
-  if (expected.length !== given.length) return false;
-  let diff = 0;
-  for (let i = 0; i < expected.length; i++) diff |= expected.charCodeAt(i) ^ given.charCodeAt(i);
-  return diff === 0;
+  let matched = false;
+  // Compare against every candidate (no early exit), each in constant time.
+  for (const given of candidates) {
+    if (given.length !== expected.length) continue;
+    let diff = 0;
+    for (let i = 0; i < expected.length; i++) diff |= expected.charCodeAt(i) ^ given.charCodeAt(i);
+    if (diff === 0) matched = true;
+  }
+  return matched;
 }

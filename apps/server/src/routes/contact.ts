@@ -164,7 +164,7 @@ async function ownConversation(c: AppContext): Promise<ConversationRow> {
 async function widgetConfig(c: AppContext): Promise<WidgetConfig> {
   const settings = await getSettings(c.env);
   const { results } = await c.env.DB.prepare(
-    `SELECT * FROM agents WHERE disabled_at IS NULL
+    `SELECT * FROM agents WHERE disabled_at IS NULL AND kind = 'human'
      ORDER BY (avatar_url IS NOT NULL) DESC, last_seen_at DESC LIMIT 3`,
   ).all<AgentRow>();
   let online = false;

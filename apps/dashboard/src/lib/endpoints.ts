@@ -4,16 +4,23 @@ import type {
   AgentConversation,
   AgentRole,
   AgentSendMessageInput,
+  ApiKey,
+  ApiScope,
   Attachment,
   CannedResponse,
   Contact,
+  CreatedApiKey,
   ConversationStatus,
   InboxCounts,
   Invite,
   Message,
   Page,
   PublicAgent,
+  WebhookDelivery,
+  WebhookEndpoint,
+  WebhookEndpointWithSecret,
 } from "yunidesk";
+import type { WebhookEventName } from "yunidesk/webhooks";
 import { api, uploadWithProgress } from "./api";
 
 export type InboxView = "mine" | "unassigned" | "open" | "snoozed" | "resolved" | "all";
@@ -33,6 +40,24 @@ export interface ConversationPatch {
   assigneeId?: string | null;
 }
 
+export interface CreateApiKeyInput {
+  name: string;
+  botName?: string;
+  scopes: ApiScope[];
+  expiresInDays: number | null;
+}
+
+/** "*" subscribes to every event, including ones added later. */
+export type EndpointEvent = Exclude<WebhookEventName, "ping"> | "*";
+
+export interface WebhookEndpointInput {
+  url: string;
+  description: string | null;
+  events: EndpointEvent[];
+}
+
+export type WebhookEndpointPatch = Partial<WebhookEndpointInput> & { enabled?: boolean };
+
 export const queryKeys = {
   bootstrap: ["bootstrap"] as const,
   counts: ["counts"] as const,
@@ -45,6 +70,9 @@ export const queryKeys = {
   team: ["team"] as const,
   settings: ["settings"] as const,
   canned: ["canned"] as const,
+  apiKeys: ["api-keys"] as const,
+  webhookEndpoints: ["webhook-endpoints"] as const,
+  webhookDeliveries: (endpointId: string) => ["webhook-deliveries", endpointId] as const,
 };
 
 const enc = encodeURIComponent;
@@ -111,4 +139,19 @@ export const endpoints = {
   updateCanned: (id: string, body: { shortcut: string; title: string; body: string }) =>
     api<CannedResponse>(`/api/agent/canned-responses/${enc(id)}`, { method: "PUT", body }),
   deleteCanned: (id: string) => api<{ ok: true }>(`/api/agent/canned-responses/${enc(id)}`, { method: "DELETE" }),
+
+  apiKeys: () => api<{ items: ApiKey[] }>("/api/agent/api-keys"),
+  createApiKey: (body: CreateApiKeyInput) => api<CreatedApiKey>("/api/agent/api-keys", { body: { ...body } }),
+  revokeApiKey: (id: string) => api<{ ok: true }>(`/api/agent/api-keys/${enc(id)}`, { method: "DELETE" }),
+
+  webhookEndpoints: () => api<{ items: WebhookEndpoint[] }>("/api/agent/webhook-endpoints"),
+  createWebhookEndpoint: (body: WebhookEndpointInput) =>
+    api<WebhookEndpointWithSecret>("/api/agent/webhook-endpoints", { body: { ...body } }),
+  patchWebhookEndpoint: (id: string, body: WebhookEndpointPatch) =>
+    api<WebhookEndpoint>(`/api/agent/webhook-endpoints/${enc(id)}`, { method: "PATCH", body: { ...body } }),
+  deleteWebhookEndpoint: (id: string) => api<{ ok: true }>(`/api/agent/webhook-endpoints/${enc(id)}`, { method: "DELETE" }),
+  rollWebhookSecret: (id: string, expireCurrentInHours = 24) =>
+    api<WebhookEndpointWithSecret>(`/api/agent/webhook-endpoints/${enc(id)}/roll-secret`, { body: { expireCurrentInHours } }),
+  testWebhookEndpoint: (id: string) => api<WebhookDelivery | null>(`/api/agent/webhook-endpoints/${enc(id)}/test`, { method: "POST" }),
+  webhookDeliveries: (id: string) => api<{ items: WebhookDelivery[] }>(`/api/agent/webhook-endpoints/${enc(id)}/deliveries`),
 };

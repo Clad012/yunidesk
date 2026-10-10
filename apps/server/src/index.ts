@@ -4,12 +4,14 @@ import type { AppEnv } from "./app-env";
 import { wakeSnoozed } from "./db/conversations";
 import type { Env } from "./env";
 import { runRetention } from "./jobs/retention";
+import { retryDueDeliveries } from "./lib/webhooks";
 import { ApiError } from "./lib/errors";
 import { embedOrigins } from "./lib/settings";
 import { agentAuthRoutes } from "./routes/agent-auth";
 import { agentRoutes } from "./routes/agent";
 import { contactRoutes } from "./routes/contact";
 import { fileRoutes } from "./routes/files";
+import { openApiDocument } from "./openapi";
 
 export { ContactChannel } from "./durable/contact-channel";
 export { InboxHub } from "./durable/inbox-hub";
@@ -69,6 +71,11 @@ app.use("/api/*", async (c, next) => {
 });
 
 app.get("/api/health", (c) => c.json({ ok: true }));
+app.get("/api/openapi.json", (c) => {
+  c.header("cache-control", "public, max-age=3600");
+  c.header("access-control-allow-origin", "*");
+  return c.json(openApiDocument);
+});
 app.route("/api/v1", contactRoutes);
 app.route("/api/agent/auth", agentAuthRoutes);
 app.route("/api/agent", agentRoutes);
@@ -135,7 +142,10 @@ export default {
   fetch: app.fetch,
   async scheduled(controller, env, ctx) {
     const origin = env.PUBLIC_URL ?? "";
-    if (controller.cron === "*/5 * * * *") {
+    if (controller.cron === "* * * * *") {
+      const retried = await retryDueDeliveries(env);
+      if (retried) console.log(`retried ${retried} webhook deliveries`);
+    } else if (controller.cron === "*/5 * * * *") {
       const woken = await wakeSnoozed(env, ctx, origin);
       if (woken) console.log(`woke ${woken} snoozed conversations`);
     } else {

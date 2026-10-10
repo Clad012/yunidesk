@@ -93,7 +93,7 @@ teamRoutes.post("/me/avatar", async (c) => {
 
 teamRoutes.get("/team", async (c) => {
   const agent = c.get("agent");
-  const { results } = await c.env.DB.prepare("SELECT * FROM agents ORDER BY created_at").all<AgentRow>();
+  const { results } = await c.env.DB.prepare("SELECT * FROM agents WHERE kind = 'human' ORDER BY created_at").all<AgentRow>();
   let invites: Invite[] = [];
   if (agent.role === "owner") {
     const rows = await c.env.DB.prepare(
@@ -139,7 +139,7 @@ teamRoutes.patch("/team/:id", async (c) => {
   const me = c.get("agent");
   requireOwner(me);
   const input = await readBody(c, memberPatchSchema);
-  const target = await c.env.DB.prepare("SELECT * FROM agents WHERE id = ?").bind(c.req.param("id")).first<AgentRow>();
+  const target = await c.env.DB.prepare("SELECT * FROM agents WHERE id = ? AND kind = 'human'").bind(c.req.param("id")).first<AgentRow>();
   if (!target) throw notFound("Teammate not found");
   const losesOwner = target.role === "owner" && (input.role === "agent" || input.disabled === true);
   if (losesOwner) {

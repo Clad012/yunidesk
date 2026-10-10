@@ -1,6 +1,6 @@
 {
   "name": "yunidesk-react",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": false,
   "type": "module",
   "description": "Embed the Yunidesk support messenger in a React or Next.js web app.",

@@ -1,0 +1,17 @@
+# Changelog
+
+## 0.2.0
+
+- **API keys** (Settings → API keys): scoped `ydk_…` keys with a checksum, stored as SHA-256 hashes, shown once, optional expiry, instant revocation. Each key acts as a bot teammate. The routes a key may call are deny-by-default.
+- **Webhook endpoints**: several endpoints, each with its own events and signing secret (AES-GCM encrypted at rest). Deliveries are logged, retried with backoff for about 3 days and kept 30 days. Endpoints that keep failing are disabled. Secrets can be rolled with a 24-hour overlap. You can send a test event.
+- Webhook payloads gain `id` (for dedupe), `actor`, and a contact summary on `conversation.created` and `message.created`.
+- `verifyWebhookSignature` accepts a header carrying several `v1` signatures (secret rolls).
+- New `yunidesk/api`: a typed client for the team API with an API key.
+- OpenAPI 3.1 description at `/api/openapi.json`.
+- `PublicAgent.isBot`.
+
+Server: run the new D1 migration (`0003`) and add the `API_LIMITER` rate-limit binding and the every-minute cron (both in `wrangler.jsonc`).
+
+## 0.1.0
+
+First release.

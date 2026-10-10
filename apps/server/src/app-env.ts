@@ -1,12 +1,20 @@
 import type { Context } from "hono";
 import type { z } from "zod";
 import type { AgentRow, ContactRow } from "./db/rows";
+import type { ApiKeyAuth } from "./lib/api-keys";
 import type { Env } from "./env";
 import { badRequest, tooManyRequests } from "./lib/errors";
 
 export type AppEnv = {
   Bindings: Env;
-  Variables: { agent: AgentRow; sessionHash: string; contact: ContactRow; identified: boolean };
+  Variables: {
+    agent: AgentRow;
+    /** Set when the caller is an API key (acting as `agent`, its bot); null for a signed-in teammate. */
+    apiKey: ApiKeyAuth | null;
+    sessionHash: string;
+    contact: ContactRow;
+    identified: boolean;
+  };
 };
 
 export type AppContext = Context<AppEnv>;
@@ -23,7 +31,9 @@ export function clientIp(c: AppContext): string {
 export async function readBody<S extends z.ZodType>(c: AppContext, schema: S): Promise<z.infer<S>> {
   let raw: unknown;
   try {
-    raw = await c.req.json();
+    const text = await c.req.text();
+    // An empty body means "all defaults" (e.g. POST …/roll-secret with no options).
+    raw = text.trim() === "" ? {} : JSON.parse(text);
   } catch {
     throw badRequest("Expected a JSON body");
   }

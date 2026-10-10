@@ -139,6 +139,8 @@ contactAdminRoutes.delete("/:id", async (c) => {
     ).bind(contact.id),
     c.env.DB.prepare("DELETE FROM conversations WHERE contact_id = ?").bind(contact.id),
     c.env.DB.prepare("DELETE FROM contacts WHERE id = ?").bind(contact.id),
+    // Queued and logged webhook payloads can carry their messages too.
+    c.env.DB.prepare("DELETE FROM webhook_deliveries WHERE contact_id = ?").bind(contact.id),
   ]);
   // Rewrites the search index so the erased words don't linger in old index segments.
   await c.env.DB.prepare("INSERT INTO messages_fts(messages_fts) VALUES('optimize')").run();

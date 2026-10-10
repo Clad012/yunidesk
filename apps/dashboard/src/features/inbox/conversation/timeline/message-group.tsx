@@ -1,11 +1,12 @@
 import type { Contact, TimelineItem, TimelineMessage } from "yunidesk";
-import { CheckCheckIcon } from "lucide-react";
+import { BotIcon, CheckCheckIcon } from "lucide-react";
 import { Fragment } from "react";
 import { copy } from "@/lib/copy";
 import { formatClock } from "@/lib/time";
 import { cn } from "@/lib/utils";
 import { useBootstrap } from "@/hooks/use-bootstrap";
 import { PersonAvatar } from "@/components/person-avatar";
+import { Tip } from "@/components/ui/tooltip";
 import { contactLabel } from "../../lib/labels";
 import { MessageBubble } from "./message-bubble";
 
@@ -31,7 +32,8 @@ export function MessageGroup({ group, contact, seenId, onRetry }: MessageGroupPr
       )}
       <div className={cn("flex min-w-0 max-w-[80%] flex-col gap-1", team ? "items-end" : "items-start")}>
         <span className="px-1 text-xs text-muted-foreground">
-          <span className="font-medium text-foreground/80">{name}</span> · {formatClock(first.createdAt)}
+          <span className="font-medium text-foreground/80">{name}</span>
+          {team && group.agent?.isBot ? <BotBadge /> : null} · {formatClock(first.createdAt)}
         </span>
         {group.messages.map((message) => (
           <Fragment key={message.clientId ?? message.id}>
@@ -45,5 +47,15 @@ export function MessageGroup({ group, contact, seenId, onRetry }: MessageGroupPr
         ))}
       </div>
     </div>
+  );
+}
+
+function BotBadge() {
+  return (
+    <Tip label={copy.conversation.botHint}>
+      <span className="ml-1.5 inline-flex items-center gap-0.5 rounded bg-muted px-1 py-px align-[1px] text-[10px] font-medium text-muted-foreground">
+        <BotIcon className="size-2.5" /> {copy.conversation.bot}
+      </span>
+    </Tip>
   );
 }

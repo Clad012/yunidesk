@@ -19,6 +19,8 @@ export interface PublicAgent {
   id: string;
   name: string;
   avatarUrl: string | null;
+  /** An API key acting as a teammate (an assistant or an integration). */
+  isBot?: boolean;
 }
 
 export interface Agent extends PublicAgent {
@@ -239,4 +241,69 @@ export interface AgentSendMessageInput extends SendMessageInput {
 
 export interface ApiErrorBody {
   error: { code: string; message: string };
+}
+
+// ---- API keys and webhook endpoints ----
+
+/**
+ * What an API key may do. Keys never reach team management, settings, exports or erasure.
+ * - conversations:read  list and read conversations, messages, teammates
+ * - conversations:write reply, add notes, upload attachments, assign, snooze, resolve
+ * - contacts:read       list and read contacts
+ * - webhooks:write      manage the webhook endpoints this key created
+ */
+export const API_SCOPES = ["conversations:read", "conversations:write", "contacts:read", "webhooks:write"] as const;
+export type ApiScope = (typeof API_SCOPES)[number];
+
+export interface ApiKey {
+  id: string;
+  name: string;
+  /** First characters of the key, to recognise it ("ydk_3f9k2m…"). */
+  prefix: string;
+  scopes: ApiScope[];
+  /** The teammate this key acts as; its name shows on replies. */
+  bot: PublicAgent;
+  createdAt: number;
+  expiresAt: number | null;
+  lastUsedAt: number | null;
+  revokedAt: number | null;
+}
+
+/** Returned once, when the key is created. Store `token` now: it can't be shown again. */
+export interface CreatedApiKey {
+  apiKey: ApiKey;
+  token: string;
+}
+
+export interface WebhookEndpoint {
+  id: string;
+  url: string;
+  description: string | null;
+  /** Event names, or ["*"] for all of them. */
+  events: string[];
+  status: "enabled" | "disabled";
+  disabledReason: string | null;
+  /** Set when an API key created it; revoking that key disables the endpoint. */
+  apiKeyId: string | null;
+  createdAt: number;
+  updatedAt: number;
+}
+
+/** Returned when an endpoint is created or its secret is rolled. The secret can't be shown again. */
+export interface WebhookEndpointWithSecret {
+  endpoint: WebhookEndpoint;
+  secret: string;
+}
+
+export interface WebhookDelivery {
+  id: string;
+  eventId: string;
+  eventType: string;
+  status: "pending" | "succeeded" | "failed";
+  attempts: number;
+  nextAttemptAt: number | null;
+  lastStatusCode: number | null;
+  lastError: string | null;
+  createdAt: number;
+  completedAt: number | null;
 }
