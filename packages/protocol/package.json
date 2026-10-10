@@ -1,6 +1,6 @@
 {
   "name": "yunidesk",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": false,
   "type": "module",
   "description": "Yunidesk client SDK core: types, the contact client (REST + realtime), identity tokens and webhook signatures for self-hosted Yunidesk support desks.",
@@ -10,7 +10,8 @@
     ".": "./src/index.ts",
     "./client": "./src/client.ts",
     "./identity": "./src/identity.ts",
-    "./webhooks": "./src/webhooks.ts"
+    "./webhooks": "./src/webhooks.ts",
+    "./api": "./src/api.ts"
   },
   "files": [
     "dist",
@@ -22,7 +23,7 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "build": "tsup src/index.ts src/client.ts src/identity.ts src/webhooks.ts --format esm,cjs --dts --clean --target es2022",
+    "build": "tsup src/index.ts src/client.ts src/identity.ts src/webhooks.ts src/api.ts --format esm,cjs --dts --clean --target es2022",
     "prepublishOnly": "pnpm run build"
   },
   "devDependencies": {
@@ -75,7 +76,12 @@
         "import": "./dist/webhooks.js",
         "require": "./dist/webhooks.cjs"
       },
-      "./package.json": "./package.json"
+      "./package.json": "./package.json",
+      "./api": {
+        "types": "./dist/api.d.ts",
+        "import": "./dist/api.js",
+        "require": "./dist/api.cjs"
+      }
     }
   }
 }

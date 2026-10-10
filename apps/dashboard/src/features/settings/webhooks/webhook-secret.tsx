@@ -7,7 +7,6 @@ import { copy } from "@/lib/copy";
 import { errorMessage } from "@/lib/api";
 import { endpoints, queryKeys } from "@/lib/endpoints";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -19,7 +18,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { CopyButton } from "../code-block";
+import { RevealedSecret } from "../revealed-secret";
 
 export function WebhookSecret({ hasSecret, disabled }: { hasSecret: boolean; disabled: boolean }) {
   const qc = useQueryClient();
@@ -42,15 +41,7 @@ export function WebhookSecret({ hasSecret, disabled }: { hasSecret: boolean; dis
   return (
     <div className="flex flex-col gap-3">
       <p className="text-sm text-muted-foreground">{hasSecret ? copy.webhooks.hasSecret : copy.webhooks.noSecret}</p>
-      {secret ? (
-        <div className="flex flex-col gap-2 rounded-lg border border-primary/30 bg-primary/5 p-3">
-          <div className="flex gap-2">
-            <Input readOnly value={secret} onFocus={(e) => e.currentTarget.select()} className="font-mono text-xs" />
-            <CopyButton text={secret} className="h-9" />
-          </div>
-          <p className="text-xs text-muted-foreground">{copy.webhooks.secretShown}</p>
-        </div>
-      ) : null}
+      {secret ? <RevealedSecret value={secret} warning={copy.webhooks.secretShown} label={copy.webhooks.secret} /> : null}
       <div>
         {hasSecret ? (
           <AlertDialog>

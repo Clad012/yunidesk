@@ -1,3 +1,4 @@
+import { DELIVERY_RETENTION_MS } from "../lib/webhooks";
 import type { Env } from "../env";
 import { getSettings } from "../lib/settings";
 import { deleteObjects } from "../lib/uploads";
@@ -60,6 +61,10 @@ export async function runRetention(env: Env): Promise<Record<string, number>> {
 
   if (expired.results.length > 0) await env.DB.prepare("INSERT INTO messages_fts(messages_fts) VALUES('optimize')").run();
 
+  const deliveries = await env.DB.prepare("DELETE FROM webhook_deliveries WHERE created_at < ? AND status != 'pending'")
+    .bind(now - DELIVERY_RETENTION_MS)
+    .run();
+
   await env.DB.batch([
     env.DB.prepare("DELETE FROM agent_sessions WHERE expires_at < ?").bind(now),
     env.DB.prepare("DELETE FROM agent_invites WHERE expires_at < ? AND accepted_at IS NULL").bind(now),
@@ -69,5 +74,6 @@ export async function runRetention(env: Env): Promise<Record<string, number>> {
     pendingUploads: pendingCount,
     conversations: expired.results.length,
     visitors: visitors.meta.changes ?? 0,
+    webhookDeliveries: deliveries.meta.changes ?? 0,
   };
 }

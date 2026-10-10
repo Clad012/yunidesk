@@ -17,8 +17,8 @@ import type { Env } from "../env";
 import { signFilePath } from "../lib/tokens";
 import { selectIn, type AgentRow, type AttachmentRow, type ContactRow, type ConversationRow, type MessageRow } from "./rows";
 
-export function toPublicAgent(row: Pick<AgentRow, "id" | "name" | "avatar_url">): PublicAgent {
-  return { id: row.id, name: row.name, avatarUrl: row.avatar_url };
+export function toPublicAgent(row: Pick<AgentRow, "id" | "name" | "avatar_url"> & { kind?: AgentRow["kind"] }): PublicAgent {
+  return { id: row.id, name: row.name, avatarUrl: row.avatar_url, ...(row.kind === "bot" ? { isBot: true } : {}) };
 }
 
 export function toAgent(row: AgentRow): Agent {

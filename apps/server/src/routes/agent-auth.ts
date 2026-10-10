@@ -58,7 +58,7 @@ agentAuthRoutes.post("/login", async (c) => {
   await limit(c.env.AUTH_LIMITER, `login:${clientIp(c)}:${email}`);
   // Also per account, whatever the IP, so spreading guesses over many IPs doesn't help.
   await limit(c.env.AUTH_LIMITER, `login-account:${email}`);
-  const agent = await c.env.DB.prepare("SELECT * FROM agents WHERE email = ? AND disabled_at IS NULL")
+  const agent = await c.env.DB.prepare("SELECT * FROM agents WHERE email = ? AND disabled_at IS NULL AND kind = 'human'")
     .bind(email)
     .first<AgentRow>();
   // Always hash, so the response time doesn't reveal which emails exist.

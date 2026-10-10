@@ -35,6 +35,18 @@ if (payload.event === "conversation.unread_reply") {
 }
 ```
 
+## Call the team API with an API key (your server)
+
+```ts
+import { createYunideskApi } from "yunidesk/api";
+
+const yunidesk = createYunideskApi({ baseUrl: "https://support.example.com", apiKey: process.env.YUNIDESK_API_KEY! });
+const { items } = await yunidesk.conversations.list({ view: "unassigned" });
+await yunidesk.conversations.send(items[0].id, { body: "Thanks, we're on it.", kind: "text" });
+```
+
+Create keys in Settings → API keys. Scopes, webhook endpoints, retries and signatures are covered in [INTEGRATIONS.md](https://github.com/Clad012/yunidesk/blob/main/docs/INTEGRATIONS.md).
+
 ## Build your own client
 
 `yunidesk/client` exports `SupportClient` (REST + websocket with heartbeat and reconnect) and the root export has every type, the messenger reducer and the en/fr copy. `yunidesk-react-native` is built on it.

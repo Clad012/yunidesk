@@ -12,7 +12,8 @@ import { badRequest, notFound } from "../lib/errors";
 import { newId } from "../lib/ids";
 import { contactChannel, notifyAgents, notifyContact } from "../lib/realtime";
 import { sendWebhook } from "../lib/webhooks";
-import type { AgentRow, AttachmentRow, ConversationRow, MessageRow } from "./rows";
+import type { WebhookActor, WebhookContactSummary } from "yunidesk/webhooks";
+import type { AgentRow, AttachmentRow, ContactRow, ConversationRow, MessageRow } from "./rows";
 import { selectIn } from "./rows";
 import { loadAgents, toAgentConversations, toContactConversations, toMessages } from "./serialize";
 
@@ -37,6 +38,19 @@ export interface MessageDraft {
 }
 
 const PREVIEW_LENGTH = 280;
+
+export function actorOf(author: Author): WebhookActor {
+  if (author.type === "contact") return { type: "contact", id: author.contactId };
+  if (!author.agent) return { type: "system", id: null };
+  return { type: author.agent.kind === "bot" ? "bot" : author.type === "system" ? "system" : "agent", id: author.agent.id };
+}
+
+async function contactSummary(env: Env, contactId: string): Promise<WebhookContactSummary> {
+  const row = await env.DB.prepare("SELECT id, external_id, email, name FROM contacts WHERE id = ?")
+    .bind(contactId)
+    .first<Pick<ContactRow, "id" | "external_id" | "email" | "name">>();
+  return { id: contactId, externalId: row?.external_id ?? null, email: row?.email ?? null, name: row?.name ?? null };
+}
 
 function sameAuthor(row: MessageRow, author: Author): boolean {
   if (author.type === "contact") return row.author_type === "contact";
@@ -93,7 +107,11 @@ export async function createConversation(
     .run();
   const conversation = await getConversation(env, id);
   const result = await insertMessage(env, ctx, origin, conversation, author, "text", draft, attachments);
-  ctx.waitUntil(sendWebhook(env, "conversation.created", { conversationId: id, contactId, channel }));
+  ctx.waitUntil(
+    contactSummary(env, contactId).then((contact) =>
+      sendWebhook(env, "conversation.created", { conversationId: id, contactId, channel, contact }),
+    ),
+  );
   return result;
 }
 
@@ -181,7 +199,7 @@ async function insertMessage(
           `UPDATE conversations SET ${previewSet}, last_agent_message_at = ?, agent_last_read_at = ?,
              assignee_id = COALESCE(assignee_id, ?)
            WHERE id = ?`,
-        ).bind(...previewValues, now, now, agent?.id ?? null, conversation.id),
+        ).bind(...previewValues, now, now, agent && agent.kind === "human" ? agent.id : null, conversation.id),
       );
     }
   } else if (kind === "note") {
@@ -230,11 +248,15 @@ async function insertMessage(
   ctx.waitUntil(broadcastMessage(env, updated, message!, row, agents));
   if (kind === "text") {
     ctx.waitUntil(
-      sendWebhook(env, "message.created", {
-        conversationId: conversation.id,
-        contactId: conversation.contact_id,
-        message: { id, authorType: author.type, agentId: agent?.id ?? null, body, attachmentCount: attachments.length, createdAt: now },
-      }),
+      contactSummary(env, conversation.contact_id).then((contact) =>
+        sendWebhook(env, "message.created", {
+          conversationId: conversation.id,
+          contactId: conversation.contact_id,
+          actor: actorOf(author),
+          contact,
+          message: { id, authorType: author.type, agentId: agent?.id ?? null, body, attachmentCount: attachments.length, createdAt: now },
+        }),
+      ),
     );
     if (author.type === "agent") ctx.waitUntil(contactChannel(env, conversation.contact_id).scheduleUnreadCheck());
   }
@@ -290,7 +312,7 @@ export async function updateConversation(
   if (patch.assigneeId !== undefined && patch.assigneeId !== conversation.assignee_id) {
     let assigneeName: string | null = null;
     if (patch.assigneeId) {
-      const assignee = await env.DB.prepare("SELECT * FROM agents WHERE id = ? AND disabled_at IS NULL")
+      const assignee = await env.DB.prepare("SELECT * FROM agents WHERE id = ? AND disabled_at IS NULL AND kind = 'human'")
         .bind(patch.assigneeId)
         .first<AgentRow>();
       if (!assignee) throw badRequest("Unknown teammate");
@@ -343,6 +365,7 @@ export async function updateConversation(
     sendWebhook(env, "conversation.updated", {
       conversationId: current.id,
       contactId: current.contact_id,
+      actor: actorOf({ type: "agent", agent }),
       status: current.status,
       assigneeId: current.assignee_id,
     }),

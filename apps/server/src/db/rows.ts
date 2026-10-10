@@ -6,6 +6,8 @@ export interface AgentRow {
   name: string;
   avatar_url: string | null;
   role: AgentRole;
+  /** Bots act only through an API key: no sign-in, no automatic assignment, hidden from the team. */
+  kind: "human" | "bot";
   password_hash: string;
   disabled_at: number | null;
   created_at: number;

@@ -15,7 +15,8 @@
 - **Web messenger**: one script tag or `<Yunidesk />` from `yunidesk-react`. Cross-origin iframe, attachments, typing, read receipts, ratings, unread badge. English and French.
 - **React Native SDK**: a native messenger for Expo and React Native apps with the same behaviour, photos, camera and files.
 - **Identity verification**: your backend signs a short-lived token for the signed-in user; without it a caller is only an anonymous visitor.
-- **Signed webhooks** (send a push when a reply stays unread), retention jobs, rate limits, strict CSP.
+- **API keys and webhook endpoints** for integrations: scoped keys that act as bot teammates, signed webhooks with retries and a delivery log, an OpenAPI 3.1 description and a typed client (`yunidesk/api`). See [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md).
+- Retention jobs, rate limits, strict CSP.
 
 Runs on Cloudflare Workers, D1, R2 and Durable Objects (hibernatable websockets). No servers to keep alive, no third-party data processor besides Cloudflare (and Resend, if you turn on email).
 
@@ -23,7 +24,7 @@ Runs on Cloudflare Workers, D1, R2 and Durable Objects (hibernatable websockets)
 
 | npm | What it is |
 |---|---|
-| [`yunidesk`](packages/protocol) | Shared types, the contact client (REST + realtime), `yunidesk/identity` (sign identity tokens on your server), `yunidesk/webhooks` (verify webhook signatures) |
+| [`yunidesk`](packages/protocol) | Shared types, the contact client (REST + realtime), `yunidesk/identity` (sign identity tokens on your server), `yunidesk/webhooks` (verify webhook signatures), `yunidesk/api` (team API client for API keys) |
 | [`yunidesk-react`](packages/react) | `<Yunidesk />` and `useYunidesk()` for React and Next.js sites |
 | [`yunidesk-react-native`](packages/react-native) | `SupportProvider`, `SupportMessenger`, `useSupport()` for Expo and React Native |
 
@@ -69,6 +70,7 @@ import { SupportProvider, SupportMessenger } from "yunidesk-react-native";
 ## Docs
 
 - [Architecture, API and security model](docs/ARCHITECTURE.md)
+- [Integrations: API keys and webhooks](docs/INTEGRATIONS.md)
 - [Deploying](docs/DEPLOY.md)
 
 ## License
