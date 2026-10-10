@@ -19,6 +19,100 @@ export const WEBHOOK_EVENT_NAMES: readonly Exclude<WebhookEventName, "ping">[] =
   "conversation.rated",
 ];
 
+/** One field an event carries, for filters ("message.body contains refund"). */
+export interface WebhookEventField {
+  /** Dotted path inside `data`. */
+  path: string;
+  type: "string" | "number" | "boolean";
+  title: { en: string; fr: string };
+  /** Every value it can take, when the list is closed. */
+  values?: readonly (string | number)[];
+}
+
+export interface WebhookEventDescriptor {
+  name: Exclude<WebhookEventName, "ping">;
+  title: { en: string; fr: string };
+  description: { en: string; fr: string };
+  fields: readonly WebhookEventField[];
+}
+
+const conversationId: WebhookEventField = { path: "conversationId", type: "string", title: { en: "Conversation", fr: "Conversation" } };
+const actorType: WebhookEventField = {
+  path: "actor.type",
+  type: "string",
+  title: { en: "Done by", fr: "Fait par" },
+  values: ["contact", "agent", "bot", "system"],
+};
+const contactFields: WebhookEventField[] = [
+  { path: "contact.name", type: "string", title: { en: "Customer name", fr: "Nom du client" } },
+  { path: "contact.email", type: "string", title: { en: "Customer email", fr: "E-mail du client" } },
+];
+
+/**
+ * Every event Yunidesk sends, described for people and for integrations that
+ * build their trigger lists from it (GET /api/agent/events). New events are
+ * added here, so integrations offer them without shipping anything.
+ */
+export const WEBHOOK_EVENT_CATALOG: readonly WebhookEventDescriptor[] = [
+  {
+    name: "conversation.created",
+    title: { en: "New conversation", fr: "Nouvelle conversation" },
+    description: { en: "A customer starts a conversation.", fr: "Un client commence une conversation." },
+    fields: [conversationId, { path: "channel", type: "string", title: { en: "Channel", fr: "Canal" } }, ...contactFields],
+  },
+  {
+    name: "message.created",
+    title: { en: "New message", fr: "Nouveau message" },
+    description: {
+      en: "A message the customer can see is posted, by the customer or the team (not internal notes).",
+      fr: "Un message visible par le client est publié, par le client ou l'équipe (pas les notes internes).",
+    },
+    fields: [
+      conversationId,
+      actorType,
+      ...contactFields,
+      { path: "message.body", type: "string", title: { en: "Message", fr: "Message" } },
+      { path: "message.attachmentCount", type: "number", title: { en: "Attachments", fr: "Pièces jointes" } },
+    ],
+  },
+  {
+    name: "conversation.updated",
+    title: { en: "Conversation updated", fr: "Conversation modifiée" },
+    description: {
+      en: "A conversation's status or assignee changes.",
+      fr: "Le statut ou la personne assignée d'une conversation change.",
+    },
+    fields: [
+      conversationId,
+      actorType,
+      { path: "status", type: "string", title: { en: "Status", fr: "Statut" }, values: ["open", "snoozed", "resolved"] },
+      { path: "assigneeId", type: "string", title: { en: "Assigned to", fr: "Assignée à" } },
+    ],
+  },
+  {
+    name: "conversation.unread_reply",
+    title: { en: "Reply left unread", fr: "Réponse non lue" },
+    description: {
+      en: "A team reply is still unread by the customer after 2 minutes.",
+      fr: "Une réponse de l'équipe n'est toujours pas lue par le client après 2 minutes.",
+    },
+    fields: [conversationId, ...contactFields, { path: "preview", type: "string", title: { en: "Reply", fr: "Réponse" } }],
+  },
+  {
+    name: "conversation.rated",
+    title: { en: "Conversation rated", fr: "Conversation notée" },
+    description: {
+      en: "A customer rates a resolved conversation (1 bad, 2 okay, 3 great).",
+      fr: "Un client note une conversation résolue (1 mauvaise, 2 correcte, 3 excellente).",
+    },
+    fields: [
+      conversationId,
+      { path: "score", type: "number", title: { en: "Score", fr: "Note" }, values: [1, 2, 3] },
+      { path: "comment", type: "string", title: { en: "Comment", fr: "Commentaire" } },
+    ],
+  },
+];
+
 export interface WebhookPayload<T = unknown> {
   /** Unique per event (`evt_…`), identical across retries: use it to drop duplicates. */
   id: string;

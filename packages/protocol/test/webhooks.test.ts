@@ -25,3 +25,14 @@ describe("verifyWebhookSignature", () => {
     expect(await verifyWebhookSignature(SECRET, header, body, { now: NOW + 6 * 60 * 1000 })).toBe(false);
   });
 });
+
+describe("event catalogue", () => {
+  it("describes exactly the events the server sends, each in English and French", async () => {
+    const { WEBHOOK_EVENT_CATALOG, WEBHOOK_EVENT_NAMES } = await import("../src/webhooks");
+    expect(WEBHOOK_EVENT_CATALOG.map((event) => event.name).sort()).toEqual([...WEBHOOK_EVENT_NAMES].sort());
+    for (const event of WEBHOOK_EVENT_CATALOG) {
+      expect(event.title.en && event.title.fr && event.description.en && event.description.fr).toBeTruthy();
+      expect(event.fields.some((field) => field.path === "conversationId")).toBe(true);
+    }
+  });
+});
