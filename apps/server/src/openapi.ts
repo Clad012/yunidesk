@@ -226,6 +226,11 @@ export const openApiDocument = {
         },
       }),
     },
+    "/events": {
+      get: op("listEvents", null, "Every event this server sends: names (en/fr), descriptions and the fields each carries", {
+        responses: { "200": ok({ type: "object", properties: { items: { type: "array", items: { type: "object" } } } }), ...errors },
+      }),
+    },
     "/teammates": {
       get: op("listTeammates", "conversations:read", "People who can be assigned conversations", {
         responses: { "200": ok({ type: "object", properties: { items: { type: "array", items: ref("PublicAgent") } } }), ...errors },

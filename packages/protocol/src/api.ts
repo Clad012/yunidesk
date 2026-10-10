@@ -12,7 +12,7 @@ import type {
   WebhookEndpoint,
   WebhookEndpointWithSecret,
 } from "./types";
-import type { WebhookEventName } from "./webhooks";
+import type { WebhookEventDescriptor, WebhookEventName } from "./webhooks";
 
 export interface YunideskApiOptions {
   /** Your Yunidesk address, e.g. https://support.example.com */
@@ -105,6 +105,8 @@ export function createYunideskApi(options: YunideskApiOptions) {
     /** The key itself, its bot and the workspace name. Use it to check a key when connecting. */
     key: () => call<{ apiKey: ApiKey; workspace: { name: string } }>("GET", "/key"),
     teammates: () => call<{ items: PublicAgent[] }>("GET", "/teammates"),
+    /** Every event this server sends, with names in en/fr and the fields each carries. */
+    events: { list: () => call<{ items: WebhookEventDescriptor[] }>("GET", "/events") },
 
     conversations: {
       list: (params: { view?: ConversationView; q?: string; cursor?: string; contactId?: string } = {}) =>

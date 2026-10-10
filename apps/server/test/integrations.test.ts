@@ -30,6 +30,7 @@ describe("what an API key may call", () => {
     expect(requiredScope("PATCH", `/conversations/${id}`)).toBe("conversations:write");
     expect(requiredScope("GET", "/contacts")).toBe("contacts:read");
     expect(requiredScope("GET", "/key")).toBeNull();
+    expect(requiredScope("GET", "/events")).toBeNull();
   });
 
   it("refuses everything else, including owner-only and GDPR routes", () => {

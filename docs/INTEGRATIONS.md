@@ -29,7 +29,7 @@ Authorization: Bearer ydk_3f9k2m…
 | `contacts:read` | `GET /contacts`, `/contacts/:id` |
 | `webhooks:write` | `/webhook-endpoints` (only the endpoints this key created) |
 
-`GET /key` works with any valid key. It returns the key, its bot and the workspace name, so you can check a key when someone connects it.
+`GET /key` and `GET /events` work with any valid key. `GET /events` lists every event the server sends, with names and descriptions in English and French and the fields each carries (dotted paths inside `data`), so an integration can build its trigger list from it and offer new events without shipping anything. It returns the key, its bot and the workspace name, so you can check a key when someone connects it.
 
 All paths are under `/api/agent`. Errors look like `{ "error": { "code", "message" } }`.
 

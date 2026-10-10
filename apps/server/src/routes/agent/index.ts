@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { WEBHOOK_EVENT_CATALOG } from "yunidesk/webhooks";
 import { limit, type AppEnv } from "../../app-env";
 import type { AgentRow } from "../../db/rows";
 import { toAgent, toPublicAgent } from "../../db/serialize";
@@ -44,6 +45,12 @@ agentRoutes.get("/key", async (c) => {
   const row = await c.env.DB.prepare("SELECT * FROM api_keys WHERE id = ?").bind(key.id).first<ApiKeyRow>();
   const settings = await getSettings(c.env);
   return c.json({ apiKey: toApiKey(row!, c.get("agent")), workspace: { name: settings.teamName } });
+});
+
+/** Every event this server sends (names, descriptions, fields), for integrations' trigger lists. */
+agentRoutes.get("/events", (c) => {
+  c.header("cache-control", "private, max-age=300");
+  return c.json({ items: WEBHOOK_EVENT_CATALOG });
 });
 
 /** People who can be assigned conversations. */

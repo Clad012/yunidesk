@@ -112,6 +112,7 @@ const ID = "[a-z]{3}_[0-9a-z]{26}";
 /** `null`: any valid key. Everything not listed here is refused to API keys (deny by default). */
 const KEY_ROUTES: { method: string; path: RegExp; scope: ApiScope | null }[] = [
   { method: "GET", path: /^\/key$/, scope: null },
+  { method: "GET", path: /^\/events$/, scope: null },
   { method: "GET", path: /^\/teammates$/, scope: "conversations:read" },
   { method: "GET", path: /^\/conversations$/, scope: "conversations:read" },
   { method: "GET", path: /^\/conversations\/counts$/, scope: "conversations:read" },

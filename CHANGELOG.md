@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.0
+
+- **Event catalogue**: `GET /api/agent/events` (any API key) and `WEBHOOK_EVENT_CATALOG` in `yunidesk/webhooks` describe every event, with names and descriptions in English and French and the fields each carries. `yunidesk.events.list()` in `yunidesk/api`.
+
 ## 0.2.0
 
 - **API keys** (Settings → API keys): scoped `ydk_…` keys with a checksum, stored as SHA-256 hashes, shown once, optional expiry, instant revocation. Each key acts as a bot teammate. The routes a key may call are deny-by-default.
