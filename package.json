@@ -1,0 +1,15 @@
+{
+  "name": "yunidesk-monorepo",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.30.3",
+  "scripts": {
+    "dev": "pnpm --parallel --filter @yunidesk/server --filter @yunidesk/dashboard --filter @yunidesk/widget dev",
+    "build": "node -e \"const fs=require('fs');for(const f of fs.readdirSync('apps/server/public'))if(f!=='.gitkeep')fs.rmSync('apps/server/public/'+f,{recursive:true,force:true})\" && pnpm --filter @yunidesk/dashboard build && pnpm --filter @yunidesk/widget build",
+    "deploy": "pnpm build && pnpm --filter @yunidesk/server run deploy",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test",
+    "deploy:production": "pnpm build && pnpm --filter @yunidesk/server run deploy:production",
+    "release": "pnpm -r --filter yunidesk --filter yunidesk-react --filter yunidesk-react-native publish --access public"
+  }
+}

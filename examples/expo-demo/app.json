@@ -1,0 +1,27 @@
+{
+  "expo": {
+    "name": "Yunidesk Demo",
+    "slug": "yunidesk-demo",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "ios": {
+      "bundleIdentifier": "ai.dev.yunidesk.demo",
+      "supportsTablet": true
+    },
+    "android": {
+      "package": "ai.dev.yunidesk.demo"
+    },
+    "plugins": [
+      "expo-status-bar",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Photos you choose are sent to the support team.",
+          "cameraPermission": "Photos you take are sent to the support team.",
+          "microphonePermission": false
+        }
+      ]
+    ]
+  }
+}

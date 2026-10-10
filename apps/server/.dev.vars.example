@@ -1,0 +1,18 @@
+# Local only: relaxes the https redirect and secret checks. Never set this in production.
+ENVIRONMENT=development
+# Copy to .dev.vars for local development. In production set these with `wrangler secret put`.
+# Signs contact sessions, websocket tickets and file links. 32+ random bytes.
+SESSION_SECRET=change-me-session-secret-at-least-32-chars
+# Shared with your app backend, which signs user identity tokens with it.
+IDENTITY_SECRET=change-me-identity-secret-at-least-32-chars
+# One-time token to create the first owner account at /setup.
+SETUP_TOKEN=change-me-setup-token
+# Dev only: extra origins allowed to call the agent API (the Vite dev servers).
+DEV_ORIGINS=http://localhost:5173,http://localhost:5174,http://localhost:8787
+ALLOWED_ORIGINS=http://localhost:5174,http://127.0.0.1:5174,http://localhost:3000
+DATA_JURISDICTION=
+# Optional: email anonymous visitors when they have an unread reply (Resend).
+# RESEND_API_KEY=
+# EMAIL_FROM=Yunidesk <support@example.com>
+# Public URL of this worker, used in emails.
+PUBLIC_URL=http://localhost:8787

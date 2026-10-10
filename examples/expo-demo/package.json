@@ -1,0 +1,28 @@
+{
+  "name": "@yunidesk/expo-demo",
+  "version": "0.1.0",
+  "private": true,
+  "main": "index.ts",
+  "scripts": {
+    "start": "expo start",
+    "ios": "expo start --ios",
+    "android": "expo start --android",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@react-native-async-storage/async-storage": "2.2.0",
+    "yunidesk": "workspace:*",
+    "yunidesk-react-native": "workspace:*",
+    "expo": "56.0.11",
+    "expo-document-picker": "~56.0.4",
+    "expo-image-picker": "~56.0.25",
+    "expo-status-bar": "~56.0.4",
+    "react": "19.2.3",
+    "react-native": "0.85.3",
+    "react-native-safe-area-context": "~5.7.0"
+  },
+  "devDependencies": {
+    "@types/react": "19.2.18",
+    "typescript": "5.9.3"
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "name": "@yunidesk/server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev --port 8787",
+    "deploy": "wrangler d1 migrations apply DB --remote && wrangler deploy",
+    "deploy:production": "wrangler d1 migrations apply DB --remote --config wrangler.production.jsonc && wrangler deploy --config wrangler.production.jsonc",
+    "db:migrate:local": "wrangler d1 migrations apply DB --local",
+    "types": "wrangler types --env-interface CloudflareBindings",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "yunidesk": "workspace:*",
+    "hono": "4.13.13",
+    "jose": "6.2.12",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3",
+    "vitest": "4.1.11",
+    "wrangler": "4.149.0"
+  }
+}

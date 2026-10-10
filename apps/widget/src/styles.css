@@ -1,0 +1,230 @@
+@import "tailwindcss";
+@import "@fontsource-variable/inter";
+
+/* Surface tokens. Brand tokens (--ys-brand, --ys-on-brand, --ys-brand-deep, --ys-ink-*) are set from the team's colour at runtime. */
+:root {
+  --ys-brand: #6d5dfc;
+  --ys-on-brand: #ffffff;
+  --ys-brand-deep: #4c3fc0;
+  --ys-ink-light: #6d5dfc;
+  --ys-ink-dark: #a9a0ff;
+  --ys-ink: var(--ys-ink-light);
+  --ys-surface: #ffffff;
+  --ys-canvas: #f6f6f9;
+  --ys-soft: #f1f1f5;
+  --ys-soft-strong: #e7e7ee;
+  --ys-text: #15151c;
+  --ys-muted: #696978;
+  --ys-faint: #9a9aa8;
+  --ys-danger: #d92d43;
+  --ys-danger-soft: #fdecef;
+  --ys-success: #17a35a;
+  --ys-shadow: 0 18px 50px -12px rgb(20 20 40 / 0.28), 0 4px 14px -4px rgb(20 20 40 / 0.12);
+  --ys-card-shadow: 0 1px 2px rgb(20 20 40 / 0.04), 0 6px 20px -8px rgb(20 20 40 / 0.14);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --ys-ink: var(--ys-ink-dark);
+    --ys-surface: #17171d;
+    --ys-canvas: #111116;
+    --ys-soft: #23232b;
+    --ys-soft-strong: #2e2e38;
+    --ys-text: #f2f2f6;
+    --ys-muted: #a4a4b2;
+    --ys-faint: #74747f;
+    --ys-danger: #ff6b7d;
+    --ys-danger-soft: #3a1d24;
+    --ys-success: #3ccf7f;
+    --ys-shadow: 0 18px 50px -12px rgb(0 0 0 / 0.6), 0 4px 14px -4px rgb(0 0 0 / 0.4);
+    --ys-card-shadow: 0 1px 2px rgb(0 0 0 / 0.2), 0 8px 24px -10px rgb(0 0 0 / 0.5);
+  }
+}
+
+@theme inline {
+  --font-sans: "Inter Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --color-brand: var(--ys-brand);
+  --color-on-brand: var(--ys-on-brand);
+  --color-brand-deep: var(--ys-brand-deep);
+  --color-ink: var(--ys-ink);
+  --color-surface: var(--ys-surface);
+  --color-canvas: var(--ys-canvas);
+  --color-soft: var(--ys-soft);
+  --color-soft-strong: var(--ys-soft-strong);
+  --color-fg: var(--ys-text);
+  --color-muted: var(--ys-muted);
+  --color-faint: var(--ys-faint);
+  --color-danger: var(--ys-danger);
+  --color-danger-soft: var(--ys-danger-soft);
+  --color-success: var(--ys-success);
+  --shadow-panel: var(--ys-shadow);
+  --shadow-card: var(--ys-card-shadow);
+  --ease-out-soft: cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+/* The frame is transparent: only the launcher and the panel paint. No color-scheme here, or the
+   browser would paint an opaque backdrop behind the iframe when it differs from the host page. */
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: transparent;
+  overflow: hidden;
+}
+
+body {
+  font-family: var(--font-sans);
+  color: var(--ys-text);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-feature-settings: "cv11", "ss01";
+  -webkit-tap-highlight-color: transparent;
+}
+
+#root {
+  position: fixed;
+  inset: 0;
+}
+
+.ys-focus:focus-visible,
+.ys-root :focus-visible:not(textarea, input) {
+  outline: 2px solid var(--ys-ink);
+  outline-offset: 2px;
+}
+
+.ys-scroll {
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--ys-soft-strong) transparent;
+}
+
+.ys-brand-gradient {
+  background:
+    radial-gradient(120% 90% at 100% 0%, color-mix(in srgb, var(--ys-on-brand) 14%, transparent) 0%, transparent 55%),
+    linear-gradient(160deg, var(--ys-brand) 0%, var(--ys-brand-deep) 100%);
+  color: var(--ys-on-brand);
+}
+
+/* Home header: the brand colour melts into the page instead of ending on a hard edge. */
+.ys-home-header {
+  position: relative;
+  isolation: isolate;
+}
+.ys-home-header::after {
+  content: "";
+  position: absolute;
+  inset: auto 0 -1px 0;
+  height: 62%;
+  background: linear-gradient(to bottom, transparent, color-mix(in srgb, var(--ys-canvas) 55%, transparent) 55%, var(--ys-canvas));
+  z-index: -1;
+  pointer-events: none;
+}
+
+/* Panel open/close: transitions on [data-phase]. */
+.ys-panel {
+  transform-origin: bottom right;
+  transition:
+    opacity 200ms var(--ease-out-soft),
+    transform 240ms var(--ease-out-soft);
+}
+.ys-panel[data-align="left"] {
+  transform-origin: bottom left;
+}
+.ys-panel[data-phase="opening"],
+.ys-panel[data-phase="closing"] {
+  opacity: 0;
+  transform: translateY(14px) scale(0.97);
+}
+.ys-panel[data-full="true"][data-phase="opening"],
+.ys-panel[data-full="true"][data-phase="closing"] {
+  transform: translateY(24px);
+}
+
+@keyframes ys-screen-in {
+  from {
+    opacity: 0;
+    transform: translateX(var(--ys-screen-from, 10px));
+  }
+}
+.ys-screen-in {
+  animation: ys-screen-in 220ms var(--ease-out-soft) both;
+}
+
+@keyframes ys-rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+.ys-rise {
+  animation: ys-rise 240ms var(--ease-out-soft) both;
+}
+
+@keyframes ys-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+}
+.ys-pop {
+  animation: ys-pop 260ms cubic-bezier(0.3, 1.4, 0.5, 1) both;
+}
+
+@keyframes ys-fade {
+  from {
+    opacity: 0;
+  }
+}
+.ys-fade {
+  animation: ys-fade 180ms ease-out both;
+}
+
+@keyframes ys-dot {
+  0%,
+  60%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.45;
+  }
+  30% {
+    transform: translateY(-3px);
+    opacity: 1;
+  }
+}
+.ys-dot {
+  animation: ys-dot 1.2s infinite ease-in-out;
+}
+.ys-dot:nth-child(2) {
+  animation-delay: 0.15s;
+}
+.ys-dot:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+@keyframes ys-shimmer {
+  from {
+    background-position: 150% 0;
+  }
+  to {
+    background-position: -50% 0;
+  }
+}
+.ys-skeleton {
+  background: linear-gradient(90deg, var(--ys-soft) 25%, var(--ys-soft-strong) 50%, var(--ys-soft) 75%);
+  background-size: 200% 100%;
+  animation: ys-shimmer 1.4s infinite linear;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+  }
+  .ys-panel[data-phase="opening"],
+  .ys-panel[data-phase="closing"] {
+    transform: none;
+  }
+}

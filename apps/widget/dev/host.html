@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Acme Analytics (dev host)</title>
+    <!--
+      Dev only: a fake customer website. Open it at http://127.0.0.1:5174/widget/dev/host.html
+      while the loader and the iframe come from http://localhost:5174, so every postMessage is
+      really cross-origin, exactly like production.
+    -->
+    <style>
+      :root { color-scheme: light; font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; }
+      body { margin: 0; background: #fbfaf7; color: #1d1b16; }
+      nav { display: flex; align-items: center; gap: 24px; padding: 18px 32px; background: #fff; box-shadow: 0 1px 0 rgb(0 0 0 / 0.04); position: sticky; top: 0; }
+      nav b { font-size: 18px; letter-spacing: -0.02em; }
+      nav a { color: #5b574d; text-decoration: none; font-size: 14px; }
+      main { max-width: 1040px; margin: 0 auto; padding: 56px 32px 160px; }
+      h1 { font-size: 48px; letter-spacing: -0.035em; line-height: 1.05; margin: 0 0 16px; max-width: 640px; }
+      .lead { font-size: 18px; color: #5b574d; max-width: 560px; line-height: 1.55; }
+      .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; margin-top: 48px; }
+      .card { background: #fff; border-radius: 16px; padding: 20px; box-shadow: 0 1px 2px rgb(0 0 0 / 0.04), 0 8px 24px -12px rgb(0 0 0 / 0.12); }
+      .card p { color: #6a665c; font-size: 14px; line-height: 1.5; margin: 6px 0 0; }
+      .dev { margin-top: 48px; background: #1d1b16; color: #f4f1ea; border-radius: 18px; padding: 20px 22px; }
+      .dev h2 { margin: 0 0 4px; font-size: 15px; }
+      .dev small { color: #a8a294; }
+      .row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+      button { font: inherit; font-size: 13px; padding: 8px 12px; border-radius: 10px; border: 0; background: #34312a; color: #f4f1ea; cursor: pointer; }
+      button:hover { background: #4a463c; }
+      button.primary { background: #f4f1ea; color: #1d1b16; }
+      code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+      pre { margin: 14px 0 0; max-height: 180px; overflow: auto; background: #12110e; border-radius: 12px; padding: 12px; color: #c9c3b4; white-space: pre-wrap; }
+      .stat { display: inline-flex; gap: 6px; align-items: center; background: #34312a; padding: 6px 10px; border-radius: 999px; font-size: 12px; }
+      label { font-size: 13px; display: inline-flex; gap: 6px; align-items: center; }
+      input[type="text"] { font: inherit; font-size: 13px; padding: 7px 10px; border-radius: 10px; border: 0; background: #34312a; color: #f4f1ea; width: 240px; }
+      .filler { height: 600px; }
+    </style>
+  </head>
+  <body>
+    <nav>
+      <b>◆ Acme Analytics</b>
+      <a href="#">Product</a><a href="#">Pricing</a><a href="#">Docs</a><a href="#">Blog</a>
+    </nav>
+    <main>
+      <h1>Know what your customers do, the moment they do it.</h1>
+      <p class="lead">A fake customer website to try the Yunidesk messenger. The bubble in the corner is an iframe from another origin.</p>
+
+      <section class="dev" aria-label="Messenger controls">
+        <h2>Messenger controls</h2>
+        <small>Page origin <code id="page-origin"></code> · support origin <code id="support-origin"></code></small>
+        <div class="row">
+          <button class="primary" id="boot-anon">Boot anonymous</button>
+          <button class="primary" id="boot-user">Boot identified (Ada)</button>
+          <button class="primary" id="boot-provider">Boot identified via getUserToken (Grace)</button>
+          <button id="shutdown">Shutdown</button>
+        </div>
+        <div class="row">
+          <button id="open">Open</button>
+          <button id="close">Close</button>
+          <button id="toggle">Toggle</button>
+          <button id="new-empty">showNewMessage()</button>
+          <input type="text" id="prefill" value="Hi! I have a question about billing." aria-label="Prefill text" />
+          <button id="new-text">showNewMessage(text)</button>
+        </div>
+        <div class="row">
+          <label><input type="checkbox" id="opt-fr" /> French</label>
+          <label><input type="checkbox" id="opt-left" /> Left</label>
+          <label><input type="checkbox" id="opt-hide" /> Hide default launcher</label>
+          <span class="stat">unread <b id="unread">0</b></span>
+          <span class="stat">open <b id="is-open">no</b></span>
+        </div>
+        <pre id="log" aria-live="polite"></pre>
+      </section>
+
+      <div class="grid">
+        <div class="card"><b>Realtime funnels</b><p>See every step, live, with no sampling and no waiting for a nightly batch.</p></div>
+        <div class="card"><b>Session replays</b><p>Watch what happened right before a customer wrote to support.</p></div>
+        <div class="card"><b>Alerts</b><p>Get pinged when a metric moves, not when it is too late.</p></div>
+        <div class="card"><b>Warehouse sync</b><p>Your data, in your warehouse, every five minutes.</p></div>
+      </div>
+      <div class="filler"></div>
+    </main>
+
+    <script>
+      // The snippet a customer pastes: a queue so calls made before widget.js loads are kept.
+      window.Yunidesk =
+        window.Yunidesk ||
+        function () {
+          (window.Yunidesk.q = window.Yunidesk.q || []).push(arguments);
+        };
+    </script>
+    <script>
+      (function () {
+        var SUPPORT_ORIGIN = "http://localhost:5174";
+        var log = document.getElementById("log");
+        function write(line) {
+          log.textContent = new Date().toLocaleTimeString() + "  " + line + "\n" + log.textContent;
+        }
+        document.getElementById("page-origin").textContent = location.origin;
+        document.getElementById("support-origin").textContent = SUPPORT_ORIGIN;
+        if (location.origin === SUPPORT_ORIGIN) write("Open this page at http://127.0.0.1:5174/widget/dev/host.html for a cross-origin test.");
+
+        function token(userId, name, email) {
+          var q = "?userId=" + encodeURIComponent(userId) + "&name=" + encodeURIComponent(name) + "&email=" + encodeURIComponent(email);
+          return fetch("/dev/token" + q).then(function (r) { return r.json(); }).then(function (j) { return j.token; });
+        }
+        function options(extra) {
+          var o = {
+            locale: document.getElementById("opt-fr").checked ? "fr" : undefined,
+            alignment: document.getElementById("opt-left").checked ? "left" : undefined,
+            hideDefaultLauncher: document.getElementById("opt-hide").checked,
+          };
+          for (var k in extra) o[k] = extra[k];
+          return o;
+        }
+        var bootMode = "anon";
+        function bootAnon() { bootMode = "anon"; Yunidesk("boot", options({})); write("boot anonymous"); }
+        function bootUser() {
+          bootMode = "user";
+          token("dev-user-1", "Ada Lovelace", "ada@example.com").then(function (t) {
+            Yunidesk("boot", options({ userToken: t }));
+            write("boot identified (static token for dev-user-1)");
+          });
+        }
+        function bootProvider() {
+          bootMode = "provider";
+          Yunidesk("boot", options({
+            getUserToken: function () {
+              write("getUserToken() called by the frame");
+              return token("dev-user-2", "Grace Hopper", "grace@example.com");
+            },
+          }));
+          write("boot identified (getUserToken for dev-user-2)");
+        }
+        var reboot = function () { ({ anon: bootAnon, user: bootUser, provider: bootProvider })[bootMode](); };
+
+        document.getElementById("boot-anon").onclick = bootAnon;
+        document.getElementById("boot-user").onclick = bootUser;
+        document.getElementById("boot-provider").onclick = bootProvider;
+        document.getElementById("shutdown").onclick = function () { Yunidesk("shutdown"); write("shutdown"); };
+        document.getElementById("open").onclick = function () { Yunidesk("open"); };
+        document.getElementById("close").onclick = function () { Yunidesk("close"); };
+        document.getElementById("toggle").onclick = function () { Yunidesk("toggle"); };
+        document.getElementById("new-empty").onclick = function () { Yunidesk("showNewMessage"); };
+        document.getElementById("new-text").onclick = function () {
+          Yunidesk("showNewMessage", document.getElementById("prefill").value);
+        };
+        document.getElementById("opt-fr").onchange = function () {
+          Yunidesk("update", { locale: this.checked ? "fr" : "en" });
+          write("update locale");
+        };
+        document.getElementById("opt-left").onchange = reboot;
+        document.getElementById("opt-hide").onchange = reboot;
+
+        Yunidesk("onUnreadCountChange", function (n) {
+          document.getElementById("unread").textContent = n;
+          write("onUnreadCountChange " + n);
+        });
+        Yunidesk("onShow", function () { document.getElementById("is-open").textContent = "yes"; write("onShow"); });
+        Yunidesk("onHide", function () { document.getElementById("is-open").textContent = "no"; write("onHide"); });
+
+        // Queued before widget.js has loaded, like a real page would.
+        bootAnon();
+      })();
+    </script>
+    <script async src="http://localhost:5174/widget.js"></script>
+  </body>
+</html>

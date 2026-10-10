@@ -1,0 +1,54 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "yunidesk",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-01",
+  "observability": { "enabled": true },
+  // Served only on the custom domain: no *.workers.dev or preview URLs (they'd bypass the domain's settings).
+  "routes": [{ "pattern": "support.example.com", "custom_domain": true }],
+  "workers_dev": false,
+  "preview_urls": false,
+  // Dashboard (/) and widget (/widget/) are static builds written into ./public by apps/dashboard and apps/widget.
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": true
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "yunidesk",
+      // Create it with: wrangler d1 create yunidesk --jurisdiction eu, then paste its id here
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      // Local dev keeps its own database (wrangler dev / --local use this id).
+      "preview_database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "r2_buckets": [
+    // Create it with: wrangler r2 bucket create yunidesk-files --jurisdiction eu
+    { "binding": "FILES", "bucket_name": "yunidesk-files", "jurisdiction": "eu" }
+  ],
+  "durable_objects": {
+    "bindings": [
+      { "name": "CONTACT_CHANNEL", "class_name": "ContactChannel" },
+      { "name": "INBOX_HUB", "class_name": "InboxHub" }
+    ]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["ContactChannel", "InboxHub"] }],
+  "ratelimits": [
+    { "name": "AUTH_LIMITER", "namespace_id": "41001", "simple": { "limit": 10, "period": 60 } },
+    { "name": "WRITE_LIMITER", "namespace_id": "41002", "simple": { "limit": 60, "period": 60 } }
+  ],
+  // Every 5 minutes: wake snoozed conversations. Daily at 03:17 UTC: retention purge.
+  "triggers": { "crons": ["*/5 * * * *", "17 3 * * *"] },
+  "vars": {
+    // Durable Objects are pinned to this jurisdiction. Empty string disables it.
+    "DATA_JURISDICTION": "eu",
+    // Origins allowed to embed the widget, in addition to the ones set in the dashboard.
+    "ALLOWED_ORIGINS": "",
+    // Origin used in links we hand out (files, invites, email confirmations).
+    "PUBLIC_URL": "https://support.example.com"
+  }
+}
