@@ -529,7 +529,8 @@ export const copy = {
   },
   knowledge: {
     title: "Knowledge",
-    description: "What the assistant knows about your product. It answers from these and says when it doesn't know.",
+    description:
+      "What the assistant knows about your product. It answers from these and says when it doesn't know. FAQ entries also show to customers in the messenger's Help section; articles are read by the assistant only.",
     add: "Add knowledge",
     search: "Search knowledge",
     empty: "No knowledge yet",

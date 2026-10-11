@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Animated, BackHandler, Easing, Platform, StyleSheet, View, useWindowDimensions } from "react-native";
 import { SupportConversation } from "../conversation/support-conversation";
 import { SupportConversationList } from "../conversation-list/support-conversation-list";
+import { SupportHelpArticle } from "../help/support-help-article";
 import { SupportHome } from "../home/support-home";
 import { useSupportCore, type MessengerRoute } from "../provider/support-context";
 import { initialStack, pop, push, replaceTopConversation, type Screen } from "./messenger-routes";
@@ -89,7 +90,11 @@ function MessengerStack({
   }, [back, registerBack]);
 
   const openConversation = useCallback((conversationId: string) => go({ name: "conversation", conversationId }), [go]);
-  const newConversation = useCallback(() => go({ name: "conversation", conversationId: null }), [go]);
+  const newConversation = useCallback(
+    (initialText?: string) => go({ name: "conversation", conversationId: null, initialText }),
+    [go],
+  );
+  const openArticle = useCallback((articleId: string) => go({ name: "article", articleId }), [go]);
   const openMessages = useCallback(() => go({ name: "messages" }), [go]);
   const onCreated = useCallback((id: string) => setStack((current) => replaceTopConversation(current, id)), []);
 
@@ -101,6 +106,7 @@ function MessengerStack({
           onNewConversation={newConversation}
           onOpenConversation={openConversation}
           onOpenMessages={openMessages}
+          onOpenArticle={openArticle}
           onClose={onClose}
           safeTop={safeTop}
         />
@@ -110,9 +116,20 @@ function MessengerStack({
       return (
         <SupportConversationList
           onOpenConversation={openConversation}
-          onNewConversation={newConversation}
+          onNewConversation={() => newConversation()}
           onBack={canGoBack ? back : undefined}
           onClose={onClose}
+          safeTop={safeTop}
+        />
+      );
+    }
+    if (screen.name === "article") {
+      return (
+        <SupportHelpArticle
+          articleId={screen.articleId}
+          onAsk={() => newConversation()}
+          onBack={canGoBack ? back : undefined}
+          onClose={canGoBack ? undefined : onClose}
           safeTop={safeTop}
         />
       );
@@ -120,6 +137,7 @@ function MessengerStack({
     return (
       <SupportConversation
         conversationId={screen.conversationId}
+        initialText={screen.initialText}
         onConversationCreated={onCreated}
         onBack={canGoBack ? back : undefined}
         onClose={canGoBack ? undefined : onClose}

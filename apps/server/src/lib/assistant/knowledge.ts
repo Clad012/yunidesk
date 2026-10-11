@@ -1,4 +1,4 @@
-import type { KnowledgeItem } from "yunidesk";
+import type { HelpArticle, KnowledgeItem } from "yunidesk";
 import type { Env } from "../../env";
 import { ftsQuery } from "../../routes/agent/inbox";
 
@@ -24,6 +24,19 @@ export function toKnowledgeItem(row: KnowledgeRow): KnowledgeItem {
  * The knowledge that best matches a question: full-text search (title weighted over body), any
  * word may match, best first. Cut to a budget so a large knowledge base never floods the prompt.
  */
+/** Most FAQ entries the messenger receives; search runs on the device over this list. */
+const MAX_HELP_ARTICLES = 100;
+
+/** The FAQ entries customers see in the messenger, in the order they were added. Articles stay private. */
+export async function listHelpArticles(env: Env): Promise<HelpArticle[]> {
+  const { results } = await env.DB.prepare(
+    "SELECT id, title, body, updated_at FROM knowledge_items WHERE kind = 'faq' ORDER BY created_at, rowid LIMIT ?",
+  )
+    .bind(MAX_HELP_ARTICLES)
+    .all<Pick<KnowledgeRow, "id" | "title" | "body" | "updated_at">>();
+  return results.map((row) => ({ id: row.id, title: row.title, body: row.body, updatedAt: row.updated_at }));
+}
+
 export async function searchKnowledge(env: Env, question: string): Promise<KnowledgeRow[]> {
   const words = ftsQuery(question);
   if (!words) return [];

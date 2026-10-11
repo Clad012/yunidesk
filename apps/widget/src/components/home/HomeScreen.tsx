@@ -6,8 +6,9 @@ import { CloseButton } from "../common/CloseButton";
 import { ErrorState, Skeleton } from "../common/States";
 import { RecentMessageCard } from "./RecentMessageCard";
 import { SendMessageCard } from "./SendMessageCard";
+import { HelpCard } from "../help/HelpCard";
 
-export function HomeScreen() {
+export function HomeScreen({ helpQuery }: { helpQuery?: string }) {
   const { strings, locale, data } = useMessenger();
   const { config, contact, status, state } = data;
   const name = firstName(contact?.name);
@@ -44,6 +45,7 @@ export function HomeScreen() {
           <>
             {latest && <RecentMessageCard conversation={latest} />}
             <SendMessageCard />
+            {data.help.length > 0 && <HelpCard initialQuery={helpQuery} />}
           </>
         )}
       </div>

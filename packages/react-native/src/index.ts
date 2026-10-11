@@ -10,6 +10,7 @@ export {
   type SupportConversationListProps,
 } from "./conversation-list/support-conversation-list";
 export { SupportConversation, type SupportConversationProps } from "./conversation/support-conversation";
+export { SupportHelpArticle, type SupportHelpArticleProps } from "./help/support-help-article";
 export type { SupportTheme, SupportPalette } from "./theme/theme";
 export type { KeyValueStorage, ConnectionState } from "yunidesk/client";
 export type { AttachmentPicker, PickSource, PickResult } from "./composer/attachment-picker";

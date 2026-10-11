@@ -73,7 +73,7 @@ export function SupportProvider({
   const open = useCallback((route: MessengerRoute = "home") => setModalRoute(route), []);
   const close = useCallback(() => setModalRoute(null), []);
 
-  const { client, dispatch, config, contact, ready, failed, connection, syncTick, appActive, activate, refresh } =
+  const { client, dispatch, config, contact, help, ready, failed, connection, syncTick, appActive, activate, refresh } =
     session;
   const core = useMemo<SupportCore>(
     () => ({
@@ -83,6 +83,7 @@ export function SupportProvider({
       theme,
       config,
       contact,
+      help,
       ready,
       failed,
       connection,
@@ -102,6 +103,7 @@ export function SupportProvider({
       theme,
       config,
       contact,
+      help,
       ready,
       failed,
       connection,

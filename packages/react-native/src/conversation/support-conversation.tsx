@@ -26,6 +26,8 @@ export interface SupportConversationProps {
   safeBottom?: boolean;
   /** Extra keyboard offset for chrome the SDK can't measure (rarely needed). */
   keyboardOffset?: number;
+  /** For a new conversation: text already in the composer. */
+  initialText?: string;
 }
 
 export function SupportConversation({
@@ -37,6 +39,7 @@ export function SupportConversation({
   safeTop = true,
   safeBottom = true,
   keyboardOffset = 0,
+  initialText,
 }: SupportConversationProps) {
   const { config, contact, theme, strings, activate } = useSupportCore();
   const { typing, teamOnline, assistantDrafts } = useMessengerState();
@@ -131,7 +134,12 @@ export function SupportConversation({
           onRetry={onRetry}
           onOpenImage={setViewing}
         />
-        <Composer typingConversationId={remoteId} onSend={onSend} safeBottom={safeBottom} />
+        <Composer
+          typingConversationId={remoteId}
+          onSend={onSend}
+          safeBottom={safeBottom}
+          initialText={conversationId === null ? initialText : undefined}
+        />
       </KeyboardAvoider>
       <ImageViewer attachment={viewing} strings={strings} onClose={() => setViewing(null)} />
     </View>

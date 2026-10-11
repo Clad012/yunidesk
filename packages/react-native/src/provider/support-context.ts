@@ -3,6 +3,7 @@ import { createContext, useContext, type Dispatch } from "react";
 import type { ConnectionState, SupportClient } from "yunidesk/client";
 import type {
   ContactProfile,
+  HelpArticle,
   Locale,
   MessengerAction,
   MessengerState,
@@ -26,6 +27,8 @@ export interface SupportCore {
   /** Server settings and team; null until the first bootstrap succeeds. */
   config: WidgetConfig | null;
   contact: ContactProfile | null;
+  /** FAQ entries for the Help section; empty until loaded, or when the team has none. */
+  help: HelpArticle[];
   ready: boolean;
   /** The last bootstrap failed; `refresh()` retries. */
   failed: boolean;
