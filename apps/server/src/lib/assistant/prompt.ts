@@ -40,3 +40,17 @@ export function buildSystemPrompt(input: {
 export function reasoningFor(model: string): { effort?: "minimal"; exclude: boolean } {
   return model.startsWith("z-ai/glm") ? { effort: "minimal", exclude: true } : { exclude: true };
 }
+
+/**
+ * Messengers show text as it is: strip the Markdown models add anyway (bold, italics, headings,
+ * code ticks) while keeping lists, line breaks and links.
+ */
+export function toPlainText(text: string): string {
+  return text
+    .replace(/\*\*(.+?)\*\*/g, "$1")
+    .replace(/__(.+?)__/g, "$1")
+    .replace(/(^|[\s(])\*(?!\s)([^*\n]+?)\*(?=[\s).,!?:;]|$)/gm, "$1$2")
+    .replace(/`([^`\n]+)`/g, "$1")
+    .replace(/^#{1,6}\s+/gm, "")
+    .replace(/^\s*[-*]\s+/gm, "• ");
+}
