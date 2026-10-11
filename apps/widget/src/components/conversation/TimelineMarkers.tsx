@@ -1,4 +1,4 @@
-import { CheckCircle2, RotateCcw } from "lucide-react";
+import { CheckCircle2, RotateCcw, UsersRound } from "lucide-react";
 import { format, formatDayLabel, type TimelineMessage } from "yunidesk";
 import { useMessenger } from "../../state/context";
 import { Avatar, TeamAvatar } from "../common/Avatar";
@@ -14,10 +14,11 @@ export function DaySeparator({ at }: { at: number }) {
   );
 }
 
-/** Status changes the contact may see: resolved and reopened. */
+/** Status changes the contact may see: resolved, reopened, and the hand-off from the AI assistant. */
 export function EventMarker({ message }: { message: TimelineMessage }) {
   const { strings } = useMessenger();
   const type = message.event?.type;
+  if (type === "handed_off") return <HandoffMarker label={strings.handedOff} />;
   if (type !== "resolved" && type !== "reopened") return null;
   return <StatusMarker resolved={type === "resolved"} label={type === "resolved" ? strings.conversationResolved : strings.conversationReopened} />;
 }
@@ -28,6 +29,17 @@ export function StatusMarker({ resolved, label }: { resolved: boolean; label: st
     <div className="ys-rise flex items-center justify-center gap-1.5 py-1 text-xs font-medium text-muted">
       <Icon className={resolved ? "size-3.5 text-success" : "size-3.5"} aria-hidden="true" />
       {label}
+    </div>
+  );
+}
+
+function HandoffMarker({ label }: { label: string }) {
+  return (
+    <div className="ys-rise flex justify-center px-6 py-1">
+      <span className="flex items-center gap-1.5 rounded-2xl bg-soft px-3 py-1.5 text-center text-xs font-medium text-muted">
+        <UsersRound className="size-3.5 shrink-0" aria-hidden="true" />
+        {label}
+      </span>
     </div>
   );
 }
@@ -69,6 +81,7 @@ export function ConversationIntro() {
       </div>
       <p className="mt-3 text-[15px] font-semibold">{config.teamName}</p>
       <p className="mt-0.5 text-[13px] text-muted">{strings.defaultIntro}</p>
+      {config.assistant && <p className="mt-2 text-xs text-faint">{strings.aiAssistantIntro}</p>}
     </div>
   );
 }

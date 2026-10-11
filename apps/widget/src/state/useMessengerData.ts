@@ -1,14 +1,8 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
-import {
-  initialMessengerState,
-  messengerReducer,
-  type ContactProfile,
-  type MessengerAction,
-  type MessengerState,
-  type WidgetConfig,
-} from "yunidesk";
+import { initialMessengerState, type ContactProfile, type WidgetConfig } from "yunidesk";
 import { SupportApiError, SupportClient, type ConnectionState } from "yunidesk/client";
 import { createFrameStorage } from "../lib/storage";
+import { frameReducer } from "./frameReducer";
 import { requestHostToken } from "./host";
 
 export interface SessionSpec {
@@ -20,17 +14,6 @@ export interface SessionSpec {
 
 export type LoadStatus = "idle" | "loading" | "ready" | "error";
 export type LoadError = "signin" | "generic";
-export type FrameAction = MessengerAction | { type: "reset" };
-
-const CONTACT_EVENTS = new Set<string>(["ready", "message.created", "conversation.updated", "conversation.read", "typing", "presence"]);
-
-function frameReducer(state: MessengerState, action: FrameAction): MessengerState {
-  if (action.type === "reset") return initialMessengerState;
-  // The shared reducer returns undefined for frames it does not know (the socket's "pong", say).
-  if (action.type === "event" && !CONTACT_EVENTS.has(action.event.type)) return state;
-  return messengerReducer(state, action) ?? state;
-}
-
 const CONFIG_CACHE_KEY = "yunidesk:config";
 const storage = createFrameStorage();
 

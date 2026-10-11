@@ -24,6 +24,9 @@ export function SendMessageCard() {
           )}
           <span>{online ? `${strings.online} · ${replyTime ?? ""}` : replyTime}</span>
         </span>
+        {data.config?.assistant && (
+          <span className="mt-1 block text-[13px] leading-[18px] text-muted">{strings.aiAssistantIntro}</span>
+        )}
       </span>
       <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-soft text-ink transition-colors group-hover:bg-brand group-hover:text-on-brand">
         <SendHorizontal className="size-[18px]" aria-hidden="true" />

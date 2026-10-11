@@ -1,5 +1,6 @@
 import type { ComponentType } from "react";
 import { ApiKeysSection } from "./api-keys/api-keys-section";
+import { AssistantSection } from "./assistant/assistant-section";
 import { InstallSection } from "./install/install-section";
 import { MessengerSection } from "./messenger/messenger-section";
 import { PrivacySection } from "./privacy/privacy-section";
@@ -11,6 +12,7 @@ import { WebhooksSection } from "./webhooks/webhooks-section";
 import type { SettingsSection } from "./section-names";
 
 export const settingsComponents: Record<SettingsSection, ComponentType> = {
+  assistant: AssistantSection,
   messenger: MessengerSection,
   install: InstallSection,
   team: TeamSection,

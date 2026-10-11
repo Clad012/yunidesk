@@ -226,6 +226,46 @@ export const openApiDocument = {
         },
       }),
     },
+    "/assistant": {
+      get: op("getAssistant", "assistant:write", "The AI assistant's settings (the OpenRouter key is never returned)", { responses: { "200": ok({ type: "object" }), ...errors } }),
+      patch: op("updateAssistant", "assistant:write", "Turn it on or off, name, instructions, OpenRouter model, anonymous visitors, daily budget", {
+        requestBody: { content: json({ type: "object" }) },
+        responses: { "200": ok({ type: "object" }), ...errors },
+      }),
+    },
+    "/assistant/openrouter-key": {
+      put: op("setAssistantKey", "assistant:write", "Set the OpenRouter key (checked with OpenRouter, stored encrypted, never returned)", {
+        requestBody: { content: json({ type: "object", required: ["key"], properties: { key: { type: "string" } } }) },
+        responses: { "200": ok({ type: "object" }), ...errors },
+      }),
+      delete: op("clearAssistantKey", "assistant:write", "Remove the OpenRouter key", { responses: { "200": ok({ type: "object" }), ...errors } }),
+    },
+    "/assistant/usage": {
+      get: op("getAssistantUsage", "assistant:write", "Today's replies and cost against the daily budget", { responses: { "200": ok({ type: "object" }), ...errors } }),
+    },
+    "/assistant/preview": {
+      post: op("previewAssistant", "assistant:write", "Ask a test question (nothing saved, nothing sent to customers)", {
+        requestBody: { content: json({ type: "object", required: ["message"], properties: { message: { type: "string", maxLength: 2000 } } }) },
+        responses: { "200": ok({ type: "object" }), ...errors },
+      }),
+    },
+    "/assistant/knowledge": {
+      get: op("listKnowledge", "assistant:write", "FAQ entries and articles", { responses: { "200": ok({ type: "object" }), ...errors } }),
+      post: op("createKnowledge", "assistant:write", "Add an FAQ entry or an article", {
+        requestBody: { content: json({ type: "object", required: ["kind", "title", "body"], properties: { kind: { enum: ["faq", "article"] }, title: { type: "string" }, body: { type: "string" } } }) },
+        responses: { "201": ok({ type: "object" }, "Created"), ...errors },
+      }),
+    },
+    "/assistant/tools": {
+      get: op("listAssistantTools", "assistant:write", "Tools the assistant may call", { responses: { "200": ok({ type: "object" }), ...errors } }),
+      post: op("createAssistantTool", "assistant:write", "Add a tool: Yunidesk POSTs signed calls to its https URL", {
+        requestBody: { content: json({ type: "object", required: ["name", "description", "inputSchema", "url"] }) },
+        responses: { "201": ok({ type: "object" }, "Created"), ...errors },
+      }),
+    },
+    "/assistant/tools/roll-secret": {
+      post: op("rollAssistantToolSecret", "assistant:write", "New secret tool calls are signed with (returned once)", { responses: { "200": ok({ type: "object" }), ...errors } }),
+    },
     "/events": {
       get: op("listEvents", null, "Every event this server sends: names (en/fr), descriptions and the fields each carries", {
         responses: { "200": ok({ type: "object", properties: { items: { type: "array", items: { type: "object" } } } }), ...errors },

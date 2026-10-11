@@ -13,6 +13,9 @@ const CORNERS: Record<"contact" | "team", Record<BubblePosition, string>> = {
   team: { single: "", first: "rounded-bl-md", middle: "rounded-l-md", last: "rounded-tl-md" },
 };
 
+/** AI replies: a soft brand tint instead of the plain grey, so they read as the assistant's. */
+export const AI_BUBBLE = "bg-[color-mix(in_srgb,var(--ys-brand)_10%,var(--ys-soft))] text-fg";
+
 interface Props {
   message: TimelineMessage;
   side: "contact" | "team";
@@ -54,7 +57,7 @@ export function MessageBubble({ message, side, position, onRetry, onOpenImage }:
             onKeyDown={(e) => failed && (e.key === "Enter" || e.key === " ") && (e.preventDefault(), onRetry(message))}
             className={cn(
               "max-w-full rounded-[20px] px-3.5 py-2 text-[15px] leading-[1.4] break-words whitespace-pre-wrap [overflow-wrap:anywhere]",
-              mine ? "bg-brand text-on-brand selection:bg-on-brand/30" : "bg-soft text-fg",
+              mine ? "bg-brand text-on-brand selection:bg-on-brand/30" : message.ai ? AI_BUBBLE : "bg-soft text-fg",
               CORNERS[side][position],
               message.delivery === "sending" && "opacity-75",
               failed && "cursor-pointer opacity-60 ring-2 ring-danger/60",

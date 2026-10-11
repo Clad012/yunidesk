@@ -22,6 +22,8 @@ export function MessageGroup({ group, contact, seenId, onRetry }: MessageGroupPr
   const team = group.side === "team";
   const name = team ? (group.agent?.id === me.id ? copy.common.you : (group.agent?.name ?? copy.common.unknown)) : contactLabel(contact);
   const first = group.messages[0]!;
+  // The assistant writes as a bot teammate: its replies get the "AI" badge, not "Bot".
+  const ai = team && group.messages.some((m) => m.ai);
 
   return (
     <div className={cn("flex gap-2.5", team && "flex-row-reverse")}>
@@ -33,7 +35,7 @@ export function MessageGroup({ group, contact, seenId, onRetry }: MessageGroupPr
       <div className={cn("flex min-w-0 max-w-[80%] flex-col gap-1", team ? "items-end" : "items-start")}>
         <span className="px-1 text-xs text-muted-foreground">
           <span className="font-medium text-foreground/80">{name}</span>
-          {team && group.agent?.isBot ? <BotBadge /> : null} · {formatClock(first.createdAt)}
+          {ai ? <AiBadge /> : team && group.agent?.isBot ? <BotBadge /> : null} · {formatClock(first.createdAt)}
         </span>
         {group.messages.map((message) => (
           <Fragment key={message.clientId ?? message.id}>
@@ -56,6 +58,14 @@ function BotBadge() {
       <span className="ml-1.5 inline-flex items-center gap-0.5 rounded bg-muted px-1 py-px align-[1px] text-[10px] font-medium text-muted-foreground">
         <BotIcon className="size-2.5" /> {copy.conversation.bot}
       </span>
+    </Tip>
+  );
+}
+
+function AiBadge() {
+  return (
+    <Tip label={copy.conversation.aiHint}>
+      <span className="ml-1.5 inline-flex items-center rounded bg-primary/12 px-1 py-px align-[1px] text-[10px] font-semibold text-primary">{copy.conversation.ai}</span>
     </Tip>
   );
 }

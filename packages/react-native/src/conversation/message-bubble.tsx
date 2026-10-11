@@ -49,8 +49,9 @@ export const MessageBubble = memo(function MessageBubble({
   onOpenImage,
 }: MessageBubbleProps) {
   const failed = message.delivery === "failed";
-  const background = mine ? theme.brand : theme.teamBubble;
-  const textColor = mine ? theme.onBrand : theme.teamBubbleText;
+  // AI replies sit on a soft brand tint instead of the teammate grey.
+  const background = mine ? theme.brand : message.ai ? theme.brandSoft : theme.teamBubble;
+  const textColor = mine ? theme.onBrand : message.ai ? theme.text : theme.teamBubbleText;
   const images = message.attachments.filter((a) => a.isImage);
   const files = message.attachments.filter((a) => !a.isImage);
   const shape = corners(mine, first, last);

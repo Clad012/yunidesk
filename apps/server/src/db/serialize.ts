@@ -112,6 +112,7 @@ export async function toMessages(
       attachments: byMessage.get(row.id) ?? [],
       clientId: row.client_id,
       createdAt: row.created_at,
+      ...(row.ai ? { ai: true } : {}),
     };
   });
 }
@@ -164,6 +165,7 @@ export async function toAgentConversations(
       agentLastReadAt: row.agent_last_read_at,
       snoozedUntil: row.snoozed_until,
       rating: toRating(row),
+      aiActive: row.ai_state === "active",
     });
   }
   return out;
@@ -216,5 +218,6 @@ export async function toContactConversations(env: Env, rows: ConversationRow[]):
       .filter((a): a is AgentRow => Boolean(a))
       .map(toPublicAgent),
     rating: toRating(row),
+    aiActive: row.ai_state === "active",
   }));
 }

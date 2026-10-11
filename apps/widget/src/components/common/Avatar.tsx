@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Bot } from "lucide-react";
 import type { PublicAgent } from "yunidesk";
 import { cn } from "../../lib/cn";
 
@@ -18,14 +19,16 @@ function paletteIndex(id: string): number {
 }
 
 interface AvatarProps {
-  agent: Pick<PublicAgent, "id" | "name" | "avatarUrl">;
+  agent: Pick<PublicAgent, "id" | "name" | "avatarUrl" | "isBot">;
   size?: number;
   className?: string;
 }
 
-/** A teammate's photo, or their initials on a soft fill. Decorative: the name is always next to it. */
+/** A teammate's photo, or their initials on a soft fill (a robot for bots). Decorative: the name is always next to it. */
 export function Avatar({ agent, size = 32, className }: AvatarProps) {
   const [broken, setBroken] = useState(false);
+  // A bot (the AI assistant, an integration) never wears a person's initials.
+  if (agent.isBot && (!agent.avatarUrl || broken)) return <AssistantAvatar size={size} className={className} />;
   const index = paletteIndex(agent.id);
   const showImage = agent.avatarUrl && !broken;
   return (
@@ -50,7 +53,7 @@ export function Avatar({ agent, size = 32, className }: AvatarProps) {
 }
 
 interface AvatarStackProps {
-  agents: readonly Pick<PublicAgent, "id" | "name" | "avatarUrl">[];
+  agents: readonly Pick<PublicAgent, "id" | "name" | "avatarUrl" | "isBot">[];
   size?: number;
   max?: number;
   /** Ring colour separating the overlapping avatars. */
@@ -83,6 +86,22 @@ export function TeamAvatar({ name, size = 32, className }: { name: string; size?
       style={{ width: size, height: size, fontSize: Math.round(size * 0.38) }}
     >
       {initials(name || "?")}
+    </span>
+  );
+}
+
+/** The AI assistant: a robot on a soft brand tint, so it never passes for a teammate. */
+export function AssistantAvatar({ size = 32, className }: { size?: number; className?: string }) {
+  return (
+    <span
+      aria-hidden="true"
+      className={cn(
+        "inline-flex shrink-0 select-none items-center justify-center rounded-full bg-[color-mix(in_srgb,var(--ys-brand)_16%,var(--ys-surface))] text-ink",
+        className,
+      )}
+      style={{ width: size, height: size }}
+    >
+      <Bot style={{ width: Math.round(size * 0.56), height: Math.round(size * 0.56) }} strokeWidth={2} />
     </span>
   );
 }

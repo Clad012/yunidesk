@@ -33,7 +33,7 @@ export const DaySeparator = memo(function DaySeparator({
   );
 });
 
-/** Status changes the contact may see. Resolution gets a filled marker; other events stay quiet. */
+/** Status changes the contact may see (resolved, reopened, handed to the team), as a small filled marker. */
 export const EventRow = memo(function EventRow({
   message,
   theme,
@@ -45,7 +45,9 @@ export const EventRow = memo(function EventRow({
       ? strings.conversationResolved
       : event?.type === "reopened"
         ? strings.conversationReopened
-        : null;
+        : event?.type === "handed_off"
+          ? strings.handedOff
+          : null;
   if (!text) return null;
   return (
     <View style={{ alignItems: "center", paddingVertical: 8, paddingHorizontal: 24 }}>
@@ -73,6 +75,9 @@ export const WelcomeRow = memo(function WelcomeRow({
       <Text style={{ color: theme.textMuted, fontSize: 13, textAlign: "center" }}>
         {online ? strings.online : replyTimeLabel(strings, config.replyTime)}
       </Text>
+      {config.assistant ? (
+        <Text style={{ color: theme.textMuted, fontSize: 13, textAlign: "center" }}>{strings.aiAssistantIntro}</Text>
+      ) : null}
     </View>
   );
 });

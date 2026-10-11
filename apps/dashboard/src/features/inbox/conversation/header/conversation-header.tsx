@@ -9,6 +9,7 @@ import { Kbd } from "@/components/ui/kbd";
 import { Tip } from "@/components/ui/tooltip";
 import { ChannelIcon } from "@/components/channel-icon";
 import { contactLabel } from "../../lib/labels";
+import { AiAnsweringChip } from "../ai-answering-chip";
 import type { useConversationActions } from "../use-conversation-actions";
 import { AssignMenu } from "./assign-menu";
 import { SnoozeMenu } from "./snooze-menu";
@@ -46,6 +47,7 @@ export function ConversationHeader({ conversation, actions, panelOpen, onToggleP
         <h2 className="min-w-0 truncate font-semibold">{contactLabel(conversation.contact)}</h2>
         <ChannelIcon channel={conversation.channel} className="size-3.5 shrink-0 text-muted-foreground" />
         <span className="hidden shrink-0 lg:inline-flex"><StatusBadge conversation={conversation} /></span>
+        {conversation.aiActive ? <AiAnsweringChip /> : null}
       </div>
       <AssignMenu conversation={conversation} onAssign={actions.assign} />
       <SnoozeMenu onSnooze={actions.snooze} />

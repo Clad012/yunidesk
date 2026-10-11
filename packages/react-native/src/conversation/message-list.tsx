@@ -1,8 +1,10 @@
 import { useCallback } from "react";
 import { ActivityIndicator, FlatList, Platform, View, useWindowDimensions, type ListRenderItem } from "react-native";
 import type { Attachment, ContactConversation, TimelineMessage } from "yunidesk";
+import { assistantLabel } from "../logic/conversation-labels";
 import { useSupportCore } from "../provider/support-context";
 import { useNow } from "../ui/use-now";
+import { AssistantDraftRow } from "./assistant-draft-row";
 import { EmailPromptCard } from "./email-prompt-card";
 import { MessageGroup } from "./message-group";
 import { RatingCard } from "./rating-card";
@@ -39,6 +41,8 @@ export function MessageList({
   const now = useNow();
   const maxWidth = Math.min(520, Math.round(width * 0.74));
   const teamName = config?.teamName ?? strings.team;
+  const assistantName = assistantLabel(strings, config);
+  const handoffConversationId = conversation?.aiActive ? conversation.id : null;
 
   const renderItem = useCallback<ListRenderItem<ConversationRowItem>>(
     ({ item }) => {
@@ -51,8 +55,10 @@ export function MessageList({
               strings={strings}
               locale={locale}
               teamName={teamName}
+              assistantName={assistantName}
               maxWidth={maxWidth}
               seenId={seenId}
+              handoffConversationId={handoffConversationId}
               onRetry={onRetry}
               onOpenImage={onOpenImage}
             />
@@ -63,6 +69,16 @@ export function MessageList({
           return <EventRow message={item.message} theme={theme} strings={strings} />;
         case "typing":
           return <TypingRow agent={item.agent} teamName={teamName} theme={theme} strings={strings} />;
+        case "assistantDraft":
+          return (
+            <AssistantDraftRow
+              draft={item.draft}
+              assistantName={assistantName}
+              maxWidth={maxWidth}
+              theme={theme}
+              strings={strings}
+            />
+          );
         case "rating":
           return conversation ? <RatingCard conversation={conversation} /> : null;
         case "emailPrompt":
@@ -73,7 +89,22 @@ export function MessageList({
           ) : null;
       }
     },
-    [config, conversation, locale, maxWidth, now, onOpenImage, onRetry, online, seenId, strings, teamName, theme],
+    [
+      assistantName,
+      config,
+      conversation,
+      handoffConversationId,
+      locale,
+      maxWidth,
+      now,
+      onOpenImage,
+      onRetry,
+      online,
+      seenId,
+      strings,
+      teamName,
+      theme,
+    ],
   );
 
   return (

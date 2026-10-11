@@ -41,7 +41,9 @@
     { "name": "AUTH_LIMITER", "namespace_id": "41001", "simple": { "limit": 10, "period": 60 } },
     { "name": "WRITE_LIMITER", "namespace_id": "41002", "simple": { "limit": 60, "period": 60 } },
     // Per API key, every request.
-    { "name": "API_LIMITER", "namespace_id": "41003", "simple": { "limit": 300, "period": 60 } }
+    { "name": "API_LIMITER", "namespace_id": "41003", "simple": { "limit": 300, "period": 60 } },
+    // Per contact, AI assistant replies.
+    { "name": "ASSISTANT_LIMITER", "namespace_id": "41004", "simple": { "limit": 6, "period": 60 } }
   ],
   // Every minute: retry webhook deliveries. Every 5 minutes: wake snoozed conversations.
   // Daily at 03:17 UTC: retention purge.

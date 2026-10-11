@@ -25,11 +25,19 @@ export interface TypingState {
   until: number;
 }
 
+/** The assistant's reply while it is being written, per conversation. */
+export interface AssistantDraft {
+  streamId: string;
+  text: string;
+  status: "thinking" | "writing";
+}
+
 export interface MessengerState {
   conversations: ContactConversation[];
   threads: Record<string, Thread>;
   typing: Record<string, TypingState>;
   teamOnline: boolean;
+  assistantDrafts: Record<string, AssistantDraft>;
 }
 
 export type MessengerAction =
@@ -49,6 +57,7 @@ export const initialMessengerState: MessengerState = {
   threads: {},
   typing: {},
   teamOnline: false,
+  assistantDrafts: {},
 };
 
 const EMPTY_THREAD: Thread = { messages: [], olderCursor: null, loaded: false };
@@ -123,7 +132,14 @@ function applyEvent(state: MessengerState, event: ContactServerEvent, now: numbe
       const thread = state.threads[event.message.conversationId];
       // A reply clears that teammate's typing bubble.
       const { [event.message.conversationId]: _, ...typing } = state.typing;
-      const next = { ...state, conversations, typing: event.message.authorType === "agent" ? typing : state.typing };
+      // The assistant's final message replaces its live draft.
+      const { [event.message.conversationId]: __, ...assistantDrafts } = state.assistantDrafts ?? {};
+      const next = {
+        ...state,
+        conversations,
+        typing: event.message.authorType === "agent" ? typing : state.typing,
+        assistantDrafts: event.message.ai ? assistantDrafts : (state.assistantDrafts ?? {}),
+      };
       // Threads we never opened are fetched on open; don't create a partial one.
       if (!thread) return next;
       return withThread(next, event.message.conversationId, {
@@ -133,6 +149,27 @@ function applyEvent(state: MessengerState, event: ContactServerEvent, now: numbe
     }
     case "conversation.updated":
       return { ...state, conversations: upsertConversation(state.conversations, event.conversation) };
+    case "assistant.status": {
+      const drafts = state.assistantDrafts ?? {};
+      if (event.status === "thinking") {
+        return { ...state, assistantDrafts: { ...drafts, [event.conversationId]: { streamId: event.streamId, text: "", status: "thinking" } } };
+      }
+      // Done: the message follows (and clears it too). Failed: nothing follows.
+      const current = drafts[event.conversationId];
+      if (!current || current.streamId !== event.streamId) return state;
+      const { [event.conversationId]: _, ...rest } = drafts;
+      return { ...state, assistantDrafts: rest };
+    }
+    case "assistant.delta": {
+      const drafts = state.assistantDrafts ?? {};
+      const current = drafts[event.conversationId];
+      // Frames can arrive late: never go back to a shorter text of the same reply.
+      if (current && current.streamId === event.streamId && current.text.length > event.text.length) return state;
+      return {
+        ...state,
+        assistantDrafts: { ...drafts, [event.conversationId]: { streamId: event.streamId, text: event.text, status: "writing" } },
+      };
+    }
     case "conversation.read":
       return {
         ...state,
@@ -231,7 +268,11 @@ export function buildTimeline(messages: TimelineMessage[]): TimelineItem[] {
     }
     const side = message.authorType === "contact" ? "contact" : "team";
     const last = group?.messages[group.messages.length - 1];
-    const sameAuthor = group && group.side === side && (side === "contact" || group.agent?.id === message.agent?.id);
+    // AI replies and a person's never share a group: each group is labelled by its first message.
+    const sameAuthor =
+      group &&
+      group.side === side &&
+      (side === "contact" || (group.agent?.id === message.agent?.id && Boolean(group.messages[0]?.ai) === Boolean(message.ai)));
     if (group && sameAuthor && last && message.createdAt - last.createdAt < GROUP_GAP_MS) {
       group.messages.push(message);
     } else {

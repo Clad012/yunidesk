@@ -9,6 +9,7 @@ import {
 } from "yunidesk";
 import { conversationPreview, conversationTitle } from "../logic/conversation-labels";
 import type { ResolvedTheme } from "../theme/theme";
+import { AssistantAvatar } from "../ui/assistant-avatar";
 import { Avatar } from "../ui/avatar";
 import { UnreadBadge } from "../ui/unread-badge";
 
@@ -54,7 +55,11 @@ export const ConversationRow = memo(function ConversationRow({
         backgroundColor: pressed ? theme.surfaceStrong : (background ?? "transparent"),
       })}
     >
-      <Avatar agent={agent} fallbackName={config?.teamName ?? strings.team} size={44} theme={theme} />
+      {agent?.isBot ? (
+        <AssistantAvatar badge={strings.aiBadge} size={44} theme={theme} />
+      ) : (
+        <Avatar agent={agent} fallbackName={config?.teamName ?? strings.team} size={44} theme={theme} />
+      )}
       <View style={{ flex: 1, gap: 2 }}>
         <View style={{ flexDirection: "row", alignItems: "baseline", gap: 8 }}>
           <Text

@@ -126,11 +126,20 @@ export function useActions(data: MessengerData, onRekey: (fromId: string, toId: 
     [client, dispatch],
   );
 
+  /** "Talk to a human": the assistant stops; the conversation comes back with aiActive false. */
+  const handoff = useCallback(
+    async (conversationId: string) => {
+      const conversation = await client.handoff(conversationId);
+      dispatch({ type: "conversation", conversation });
+    },
+    [client, dispatch],
+  );
+
   const saveEmail = useCallback((email: string) => client.updateContact({ email }), [client]);
 
   return useMemo(
-    () => ({ send, retry, markRead, loadOlder, rate, saveEmail, loadThread: data.loadThread }),
-    [send, retry, markRead, loadOlder, rate, saveEmail, data.loadThread],
+    () => ({ send, retry, markRead, loadOlder, rate, handoff, saveEmail, loadThread: data.loadThread }),
+    [send, retry, markRead, loadOlder, rate, handoff, saveEmail, data.loadThread],
   );
 }
 

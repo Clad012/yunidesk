@@ -17,7 +17,9 @@ export function SendMessageCard({ config, online, theme, strings, onPress }: Sen
     <Pressable
       onPress={onPress}
       accessibilityRole="button"
-      accessibilityLabel={`${strings.sendUsAMessage}, ${status}`}
+      accessibilityLabel={[strings.sendUsAMessage, status, config.assistant ? strings.aiAssistantIntro : null]
+        .filter(Boolean)
+        .join(", ")}
       style={({ pressed }) => ({
         flexDirection: "row",
         alignItems: "center",
@@ -33,6 +35,9 @@ export function SendMessageCard({ config, online, theme, strings, onPress }: Sen
           {online ? <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: theme.online }} /> : null}
           <Text style={{ color: theme.textMuted, fontSize: 14, flexShrink: 1 }}>{status}</Text>
         </View>
+        {config.assistant ? (
+          <Text style={{ color: theme.textMuted, fontSize: 14 }}>{strings.aiAssistantIntro}</Text>
+        ) : null}
       </View>
       <View
         style={{

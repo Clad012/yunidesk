@@ -39,7 +39,7 @@ export function SupportConversation({
   keyboardOffset = 0,
 }: SupportConversationProps) {
   const { config, contact, theme, strings, activate } = useSupportCore();
-  const { typing, teamOnline } = useMessengerState();
+  const { typing, teamOnline, assistantDrafts } = useMessengerState();
   useEffect(activate, [activate]);
 
   // Starts as the prop; a new conversation moves from its temporary id to the server's.
@@ -94,10 +94,21 @@ export function SupportConversation({
     return conversationRows(list, {
       showWelcome: !remoteId || (!!thread?.loaded && thread.olderCursor === null),
       typingAgent: remoteId ? (typing[remoteId]?.agent ?? null) : null,
+      assistantDraft: remoteId ? (assistantDrafts[remoteId] ?? null) : null,
       showRating: conversation?.status === "resolved",
       showEmailPrompt: askEmail,
     });
-  }, [messages, config, contact, remoteId, thread?.loaded, thread?.olderCursor, typing, conversation?.status]);
+  }, [
+    messages,
+    config,
+    contact,
+    remoteId,
+    thread?.loaded,
+    thread?.olderCursor,
+    typing,
+    assistantDrafts,
+    conversation?.status,
+  ]);
 
   const seenId = useMemo(
     () => (messages ? lastSeenMessageId(messages, conversation?.agentLastReadAt ?? null) : null),

@@ -162,6 +162,11 @@ export class SupportClient {
     return this.request("POST", `/api/v1/conversations/${encodeURIComponent(conversationId)}/read`);
   }
 
+  /** "Talk to a human": the AI assistant stops and the team takes the conversation. */
+  handoff(conversationId: string): Promise<ContactConversation> {
+    return this.request("POST", `/api/v1/conversations/${encodeURIComponent(conversationId)}/handoff`);
+  }
+
   rate(conversationId: string, input: { score: 1 | 2 | 3; comment?: string }): Promise<ContactConversation> {
     return this.request("POST", `/api/v1/conversations/${encodeURIComponent(conversationId)}/rating`, input);
   }
