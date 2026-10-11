@@ -29,7 +29,8 @@ export interface TypingState {
 export interface AssistantDraft {
   streamId: string;
   text: string;
-  status: "thinking" | "writing";
+  /** "done": finished; it stays on screen until the final message replaces it, so nothing blinks. */
+  status: "thinking" | "writing" | "done";
 }
 
 export interface MessengerState {
@@ -70,6 +71,12 @@ export function messengerReducer(state: MessengerState, action: MessengerAction)
       return { ...state, conversations: upsertConversation(state.conversations, action.conversation) };
     case "page": {
       const thread = state.threads[action.conversationId] ?? EMPTY_THREAD;
+      // A finished reply whose message we missed (socket dropped) is in this page: drop its draft.
+      const drafts = state.assistantDrafts ?? {};
+      if (drafts[action.conversationId]?.status === "done") {
+        const { [action.conversationId]: _, ...rest } = drafts;
+        state = { ...state, assistantDrafts: rest };
+      }
       return withThread(state, action.conversationId, {
         messages: mergeMessages(thread.messages, action.messages),
         // An older page moves the cursor back; a refresh of the newest page keeps any older cursor we had.
@@ -154,9 +161,13 @@ function applyEvent(state: MessengerState, event: ContactServerEvent, now: numbe
       if (event.status === "thinking") {
         return { ...state, assistantDrafts: { ...drafts, [event.conversationId]: { streamId: event.streamId, text: "", status: "thinking" } } };
       }
-      // Done: the message follows (and clears it too). Failed: nothing follows.
       const current = drafts[event.conversationId];
       if (!current || current.streamId !== event.streamId) return state;
+      // Done: keep the text until the final message replaces it; dropping it now would leave a gap.
+      if (event.status === "done") {
+        return { ...state, assistantDrafts: { ...drafts, [event.conversationId]: { ...current, status: "done" } } };
+      }
+      // Failed: nothing follows.
       const { [event.conversationId]: _, ...rest } = drafts;
       return { ...state, assistantDrafts: rest };
     }

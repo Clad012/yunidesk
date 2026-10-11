@@ -42,6 +42,16 @@ export function MessageList({ conversationId, conversation, thread, loadError, o
   const askEmail = Boolean(config?.askEmailForAnonymous && contact && !contact.isIdentified) && messages.some((m) => m.authorType === "contact" && !m.delivery);
   const emailAfter = askEmail ? items.find((i) => i.type === "group" && i.side === "contact")?.key : undefined;
 
+  // The group holding the assistant's final message replaces its live draft in place: no rise
+  // animation, or the text would vanish and fade back in. Remembered so it never replays.
+  const steadyGroups = useRef(new Set<string>());
+  const draftShown = useRef(false);
+  if (draftShown.current && !draft && last?.ai) {
+    const group = items.findLast((item) => item.type === "group");
+    if (group) steadyGroups.current.add(group.key);
+  }
+  draftShown.current = Boolean(draft);
+
   const scroll = useStickyScroll(scrollRef, contentRef, {
     contentKey: [messages.length, lastKey, last?.delivery, typing ? 1 : 0, draft?.status, draft?.text.length, conversation?.aiActive, conversation?.status, conversation?.rating?.score, seenId, askEmail, contact?.email].join("|"),
     lastId: lastKey,
@@ -86,6 +96,7 @@ export function MessageList({ conversationId, conversation, thread, loadError, o
                   handoffConversationId={handoffConversationId}
                   onRetry={onRetry}
                   onOpenImage={onOpenImage}
+                  rise={!steadyGroups.current.has(item.key)}
                 />
                 {item.key === emailAfter && <EmailCard />}
               </Fragment>

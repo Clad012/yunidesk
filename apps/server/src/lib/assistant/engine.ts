@@ -234,7 +234,9 @@ export async function runAssistantTurn(
       return;
     }
     const agent = await assistantAgent(env, stored);
-    await postAssistantMessage(env, ctx, origin, current, agent, reply.text);
+    const posted = await postAssistantMessage(env, ctx, origin, current, agent, reply.text);
+    // The message must reach the customer before "done", or old messengers drop the text first and blink.
+    await posted.delivered;
     await status("done");
   } catch (error) {
     console.error("assistant reply failed", error instanceof Error ? error.message : String(error));

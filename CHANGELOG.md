@@ -6,6 +6,7 @@
   - Only knowledge items of kind `faq` are shown; `article` items stay for the assistant only.
   - New contact route `GET /api/v1/help`, `SupportClient.help()`, `searchHelp()` and the `HelpArticle` type in `yunidesk`.
   - React Native: `SupportHome` gains `onOpenArticle` (the Help section shows only when it is set; `SupportMessenger` sets it), `onNewConversation` may receive the text to prefill, new `SupportHelpArticle` screen and `SupportConversation.initialText`.
+- **No blink when an AI reply finishes**: the server now sends `assistant.status: done` only after the final message went out, and the messenger keeps the finished text until that message replaces it (status `done` on `AssistantDraft`). In the widget the final message no longer fades in again.
 
 ## 0.4.0
 

@@ -15,6 +15,8 @@ interface Props {
   handoffConversationId: string | null;
   onRetry: (message: TimelineMessage) => void;
   onOpenImage: (attachment: Attachment) => void;
+  /** False when it takes the place of the assistant's live draft: it is already on screen. */
+  rise?: boolean;
 }
 
 function position(index: number, count: number): BubblePosition {
@@ -24,7 +26,7 @@ function position(index: number, count: number): BubblePosition {
 }
 
 /** A run of messages from one author: name on the first, avatar on the last (team side). */
-export function MessageGroup({ group, seenId, handoffConversationId, onRetry, onOpenImage }: Props) {
+export function MessageGroup({ group, seenId, handoffConversationId, onRetry, onOpenImage, rise = true }: Props) {
   const { strings, data } = useMessenger();
   const team = group.side === "team";
   const ai = team && group.messages[0]?.ai === true;
@@ -35,7 +37,7 @@ export function MessageGroup({ group, seenId, handoffConversationId, onRetry, on
   const seenInside = seenId && last?.id !== seenId && group.messages.some((m) => m.id === seenId);
 
   return (
-    <div className="ys-rise flex flex-col">
+    <div className={cn("flex flex-col", rise && "ys-rise")}>
       <div className={cn("flex items-end gap-2", team ? "pr-14" : "pl-14")}>
         {team && (
           <div className="mb-0.5 w-7 shrink-0">
