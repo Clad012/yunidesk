@@ -85,7 +85,7 @@ export function RatingCard({ conversation }: RatingCardProps) {
             multiline
             maxLength={1000}
             keyboardAppearance={theme.scheme}
-            selectionColor={theme.brand}
+            selectionColor={theme.accent}
             style={{
               minHeight: 44,
               maxHeight: 120,
@@ -109,14 +109,14 @@ export function RatingCard({ conversation }: RatingCardProps) {
               borderRadius: 999,
               alignItems: "center",
               justifyContent: "center",
-              backgroundColor: theme.brand,
+              backgroundColor: theme.accent,
               opacity: pressed ? 0.8 : 1,
             })}
           >
             {busy ? (
-              <ActivityIndicator color={theme.onBrand} />
+              <ActivityIndicator color={theme.onAccent} />
             ) : (
-              <Text style={{ color: theme.onBrand, fontSize: 16, fontWeight: "700" }}>{strings.rateSubmit}</Text>
+              <Text style={{ color: theme.onAccent, fontSize: 16, fontWeight: "700" }}>{strings.rateSubmit}</Text>
             )}
           </Pressable>
         </>

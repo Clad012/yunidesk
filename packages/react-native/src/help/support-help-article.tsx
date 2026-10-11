@@ -34,7 +34,7 @@ export function SupportHelpArticle({ articleId, onAsk, onBack, onClose, safeTop 
             <Text style={{ color: theme.text, fontSize: 22, fontWeight: "700", lineHeight: 28 }} accessibilityRole="header">
               {article.title}
             </Text>
-            <LinkedText text={article.body} style={{ color: theme.text, fontSize: 16, lineHeight: 24 }} linkColor={theme.brand} />
+            <LinkedText text={article.body} style={{ color: theme.text, fontSize: 16, lineHeight: 24 }} linkColor={theme.accent} />
           </View>
         ) : null}
         <View style={{ marginTop: 28, borderRadius: 18, backgroundColor: theme.surface, padding: 18, gap: 6 }}>
@@ -51,11 +51,11 @@ export function SupportHelpArticle({ articleId, onAsk, onBack, onClose, safeTop 
               borderRadius: 999,
               paddingHorizontal: 16,
               paddingVertical: 10,
-              backgroundColor: theme.brand,
+              backgroundColor: theme.accent,
               opacity: pressed ? 0.8 : 1,
             })}
           >
-            <Text style={{ color: theme.onBrand, fontSize: 15, fontWeight: "600" }}>{strings.askAQuestion}</Text>
+            <Text style={{ color: theme.onAccent, fontSize: 15, fontWeight: "600" }}>{strings.askAQuestion}</Text>
           </Pressable>
         </View>
       </ScrollView>

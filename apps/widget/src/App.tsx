@@ -57,7 +57,8 @@ export function App() {
   }, [sessionKey]);
 
   const conversationId = route.name === "conversation" ? route.id : null;
-  const data = useMessengerData(host.session, conversationId);
+  const locale = resolveLocale(host.boot?.locale ?? navigator.language);
+  const data = useMessengerData(host.session, conversationId, locale);
   dataRef.current = data;
 
   const onRekey = useCallback((fromId: string, toId: string) => {
@@ -65,7 +66,6 @@ export function App() {
   }, []);
   const actions = useActions(data, onRekey);
 
-  const locale = resolveLocale(host.boot?.locale ?? navigator.language);
   const strings = getStrings(locale);
   const alignment = host.boot?.alignment ?? data.config?.launcherPosition ?? "right";
   useBrandTheme(data.config?.brandColor ?? null);

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.6.0
+
+- **FAQ per language**: knowledge items gain `locale` (`en`, `fr`, or null for every language; migration `0005`). The messenger's Help shows the entries in the customer's language plus those for every language (`GET /api/v1/help?locale=`, `SupportClient.help(locale)`). The dashboard has a Language picker.
+- **Readable accent colour** (React Native): `theme.accent` / `theme.onAccent` are the brand colour when it stands out on the screen and the text colour otherwise, so a near-black brand no longer makes "Talk to a human", links, the send button and other brand-coloured text vanish in dark mode. Brand fills (header, your bubbles, avatars) keep the brand.
+
 ## 0.5.0
 
 - **Help in the messenger**: the Home screen of the widget and of the React Native SDK shows your FAQ entries with a search box (accents and case ignored, works offline over the loaded list). Tapping one opens the answer, with "Ask a question" underneath. A search with no answer offers to ask the team with the search already typed.

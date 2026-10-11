@@ -33,8 +33,8 @@ export const TalkToHuman = memo(function TalkToHuman({ conversationId, theme, st
           backgroundColor: pressed ? theme.surfaceStrong : theme.surface,
         })}
       >
-        {pending ? <ActivityIndicator size="small" color={theme.brand} /> : null}
-        <Text style={{ color: pending ? theme.textMuted : theme.brand, fontSize: 14, fontWeight: "600" }}>
+        {pending ? <ActivityIndicator size="small" color={theme.accent} /> : null}
+        <Text style={{ color: pending ? theme.textMuted : theme.accent, fontSize: 14, fontWeight: "600" }}>
           {pending ? strings.talkToHumanPending : strings.talkToHuman}
         </Text>
       </Pressable>

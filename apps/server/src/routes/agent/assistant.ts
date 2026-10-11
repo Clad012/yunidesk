@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { z } from "zod";
-import type { AssistantSettings, AssistantTool, KnowledgeItem } from "yunidesk";
+import { SUPPORTED_LOCALES, type AssistantSettings, type AssistantTool, type KnowledgeItem, type Locale } from "yunidesk";
 import { limit, publicOrigin, readBody, type AppContext, type AppEnv } from "../../app-env";
 import { generateReply } from "../../lib/assistant/engine";
 import { toKnowledgeItem, type KnowledgeRow } from "../../lib/assistant/knowledge";
@@ -41,6 +41,7 @@ const knowledgeSchema = z.object({
   kind: z.enum(["faq", "article"]),
   title: z.string().trim().min(1).max(300),
   body: z.string().trim().min(1).max(20_000),
+  locale: z.enum(SUPPORTED_LOCALES as [Locale, ...Locale[]]).nullable().optional(),
 });
 const inputSchemaSchema = z
   .record(z.string(), z.unknown())
@@ -169,8 +170,10 @@ assistantRoutes.post("/knowledge", async (c) => {
   if ((count?.n ?? 0) >= MAX_KNOWLEDGE_ITEMS) throw conflict(`At most ${MAX_KNOWLEDGE_ITEMS} knowledge items`);
   const now = Date.now();
   const id = newId("kno");
-  await c.env.DB.prepare("INSERT INTO knowledge_items (id, kind, title, body, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)")
-    .bind(id, input.kind, input.title, input.body, now, now)
+  await c.env.DB.prepare(
+    "INSERT INTO knowledge_items (id, kind, title, body, locale, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+  )
+    .bind(id, input.kind, input.title, input.body, input.locale ?? null, now, now)
     .run();
   const row = await c.env.DB.prepare("SELECT * FROM knowledge_items WHERE id = ?").bind(id).first<KnowledgeRow>();
   return c.json<KnowledgeItem>(toKnowledgeItem(row!), 201);
@@ -181,8 +184,15 @@ assistantRoutes.patch("/knowledge/:id", async (c) => {
   const input = await readBody(c, knowledgeSchema.partial());
   const row = await c.env.DB.prepare("SELECT * FROM knowledge_items WHERE id = ?").bind(c.req.param("id")).first<KnowledgeRow>();
   if (!row) throw notFound("Knowledge item not found");
-  await c.env.DB.prepare("UPDATE knowledge_items SET kind = ?, title = ?, body = ?, updated_at = ? WHERE id = ?")
-    .bind(input.kind ?? row.kind, input.title ?? row.title, input.body ?? row.body, Date.now(), row.id)
+  await c.env.DB.prepare("UPDATE knowledge_items SET kind = ?, title = ?, body = ?, locale = ?, updated_at = ? WHERE id = ?")
+    .bind(
+      input.kind ?? row.kind,
+      input.title ?? row.title,
+      input.body ?? row.body,
+      input.locale === undefined ? row.locale : input.locale,
+      Date.now(),
+      row.id,
+    )
     .run();
   const updated = await c.env.DB.prepare("SELECT * FROM knowledge_items WHERE id = ?").bind(row.id).first<KnowledgeRow>();
   return c.json(toKnowledgeItem(updated!));

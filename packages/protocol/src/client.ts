@@ -5,6 +5,7 @@ import type {
   Attachment,
   BootstrapResponse,
   HelpArticle,
+  Locale,
   Channel,
   ClientEvent,
   ContactConversation,
@@ -135,9 +136,9 @@ export class SupportClient {
     return this.request("GET", "/api/v1/bootstrap");
   }
 
-  /** The FAQ shown in the messenger's Help section. */
-  help(): Promise<{ items: HelpArticle[] }> {
-    return this.request("GET", "/api/v1/help");
+  /** The FAQ shown in the messenger's Help section: entries in `locale` and those for every language. */
+  help(locale?: Locale): Promise<{ items: HelpArticle[] }> {
+    return this.request("GET", `/api/v1/help${locale ? `?locale=${encodeURIComponent(locale)}` : ""}`);
   }
 
   listConversations(): Promise<{ items: ContactConversation[] }> {

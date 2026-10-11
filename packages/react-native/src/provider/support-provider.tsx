@@ -1,9 +1,9 @@
 import { loadExpoAttachmentPicker } from "../composer/expo-picker";
 import type { AttachmentPicker } from "../composer/attachment-picker";
-import { useCallback, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useColorScheme } from "react-native";
 import type { KeyValueStorage } from "yunidesk/client";
-import { getStrings, resolveLocale } from "yunidesk";
+import { getStrings, resolveLocale, type HelpArticle } from "yunidesk";
 import { resolveTheme, type SupportTheme } from "../theme/theme";
 import { SupportCoreContext, SupportStateContext, type MessengerRoute, type SupportCore } from "./support-context";
 import { useSupportSession } from "./use-support-session";
@@ -73,8 +73,22 @@ export function SupportProvider({
   const open = useCallback((route: MessengerRoute = "home") => setModalRoute(route), []);
   const close = useCallback(() => setModalRoute(null), []);
 
-  const { client, dispatch, config, contact, help, ready, failed, connection, syncTick, appActive, activate, refresh } =
+  const { client, dispatch, config, contact, ready, failed, connection, syncTick, appActive, activate, refresh } =
     session;
+  // The FAQ in the user's language; without it the messenger simply has no Help section.
+  const [help, setHelp] = useState<HelpArticle[]>([]);
+  useEffect(() => {
+    if (!ready) return;
+    let cancelled = false;
+    client
+      .help(locale)
+      .then((page) => !cancelled && setHelp(page.items))
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [client, ready, locale]);
+
   const core = useMemo<SupportCore>(
     () => ({
       client,

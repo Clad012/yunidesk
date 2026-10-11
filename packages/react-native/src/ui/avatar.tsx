@@ -44,7 +44,7 @@ export const Avatar = memo(function Avatar({
         <Image source={{ uri: url }} style={box} onError={() => setBroken(true)} />
       ) : (
         <Text
-          style={{ color: textColor ?? theme.brand, fontSize: size * 0.38, fontWeight: "600" }}
+          style={{ color: textColor ?? theme.accent, fontSize: size * 0.38, fontWeight: "600" }}
           allowFontScaling={false}
           numberOfLines={1}
         >

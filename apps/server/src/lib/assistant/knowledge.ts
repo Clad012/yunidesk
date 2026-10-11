@@ -1,4 +1,4 @@
-import type { HelpArticle, KnowledgeItem } from "yunidesk";
+import type { HelpArticle, KnowledgeItem, Locale } from "yunidesk";
 import type { Env } from "../../env";
 import { ftsQuery } from "../../routes/agent/inbox";
 
@@ -7,6 +7,7 @@ export interface KnowledgeRow {
   kind: "faq" | "article";
   title: string;
   body: string;
+  locale: Locale | null;
   created_at: number;
   updated_at: number;
 }
@@ -17,7 +18,15 @@ const MAX_ITEM_CHARS = 3000;
 const MAX_MATCHES = 6;
 
 export function toKnowledgeItem(row: KnowledgeRow): KnowledgeItem {
-  return { id: row.id, kind: row.kind, title: row.title, body: row.body, createdAt: row.created_at, updatedAt: row.updated_at };
+  return {
+    id: row.id,
+    kind: row.kind,
+    title: row.title,
+    body: row.body,
+    locale: row.locale,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
 }
 
 /**
@@ -27,12 +36,16 @@ export function toKnowledgeItem(row: KnowledgeRow): KnowledgeItem {
 /** Most FAQ entries the messenger receives; search runs on the device over this list. */
 const MAX_HELP_ARTICLES = 100;
 
-/** The FAQ entries customers see in the messenger, in the order they were added. Articles stay private. */
-export async function listHelpArticles(env: Env): Promise<HelpArticle[]> {
+/**
+ * The FAQ entries customers see in the messenger: those in their language and those for every
+ * language, in the order they were added. Articles stay private.
+ */
+export async function listHelpArticles(env: Env, locale: Locale): Promise<HelpArticle[]> {
   const { results } = await env.DB.prepare(
-    "SELECT id, title, body, updated_at FROM knowledge_items WHERE kind = 'faq' ORDER BY created_at, rowid LIMIT ?",
+    `SELECT id, title, body, updated_at FROM knowledge_items
+     WHERE kind = 'faq' AND (locale IS NULL OR locale = ?) ORDER BY created_at, rowid LIMIT ?`,
   )
-    .bind(MAX_HELP_ARTICLES)
+    .bind(locale, MAX_HELP_ARTICLES)
     .all<Pick<KnowledgeRow, "id" | "title" | "body" | "updated_at">>();
   return results.map((row) => ({ id: row.id, title: row.title, body: row.body, updatedAt: row.updated_at }));
 }

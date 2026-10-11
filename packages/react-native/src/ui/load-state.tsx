@@ -23,11 +23,11 @@ export function LoadState({ failed, theme, strings, onRetry }: LoadStateProps) {
               paddingHorizontal: 20,
               paddingVertical: 12,
               borderRadius: 999,
-              backgroundColor: theme.brand,
+              backgroundColor: theme.accent,
               opacity: pressed ? 0.7 : 1,
             })}
           >
-            <Text style={{ color: theme.onBrand, fontSize: 16, fontWeight: "600" }}>{strings.retry}</Text>
+            <Text style={{ color: theme.onAccent, fontSize: 16, fontWeight: "600" }}>{strings.retry}</Text>
           </Pressable>
         </>
       ) : (

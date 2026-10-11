@@ -1,4 +1,4 @@
-import type { KnowledgeInput, KnowledgeItem } from "yunidesk";
+import { SUPPORTED_LOCALES, type KnowledgeInput, type KnowledgeItem, type Locale } from "yunidesk";
 import { useState, type FormEvent } from "react";
 import { copy } from "@/lib/copy";
 import { Field } from "@/components/field";
@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 
 type Kind = KnowledgeInput["kind"];
 const KINDS: readonly Kind[] = ["faq", "article"];
+const ALL_LANGUAGES = "all";
 
 interface KnowledgeDialogProps {
   initial: KnowledgeItem | null;
@@ -20,13 +21,18 @@ interface KnowledgeDialogProps {
 }
 
 export function KnowledgeDialog({ initial, saving, error, onClose, onSave }: KnowledgeDialogProps) {
-  const [draft, setDraft] = useState<KnowledgeInput>(() => ({ kind: initial?.kind ?? "faq", title: initial?.title ?? "", body: initial?.body ?? "" }));
+  const [draft, setDraft] = useState<KnowledgeInput>(() => ({
+    kind: initial?.kind ?? "faq",
+    title: initial?.title ?? "",
+    body: initial?.body ?? "",
+    locale: initial?.locale ?? null,
+  }));
   const faq = draft.kind === "faq";
   const complete = draft.title.trim() !== "" && draft.body.trim() !== "";
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    if (complete) onSave({ kind: draft.kind, title: draft.title.trim(), body: draft.body.trim() });
+    if (complete) onSave({ kind: draft.kind, title: draft.title.trim(), body: draft.body.trim(), locale: draft.locale ?? null });
   };
 
   return (
@@ -47,6 +53,26 @@ export function KnowledgeDialog({ initial, saving, error, onClose, onSave }: Kno
                   {KINDS.map((kind) => (
                     <SelectItem key={kind} value={kind}>
                       {copy.knowledge[`kind_${kind}`]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+          </Field>
+          <Field label={copy.knowledge.language}>
+            {(id) => (
+              <Select
+                value={draft.locale ?? ALL_LANGUAGES}
+                onValueChange={(v) => setDraft((d) => ({ ...d, locale: v === ALL_LANGUAGES ? null : (v as Locale) }))}
+              >
+                <SelectTrigger id={id} className="w-40">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={ALL_LANGUAGES}>{copy.knowledge.language_all}</SelectItem>
+                  {SUPPORTED_LOCALES.map((locale) => (
+                    <SelectItem key={locale} value={locale}>
+                      {copy.knowledge[`language_${locale}`]}
                     </SelectItem>
                   ))}
                 </SelectContent>

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
-import { initialMessengerState, type ContactProfile, type HelpArticle, type WidgetConfig } from "yunidesk";
+import { initialMessengerState, type ContactProfile, type HelpArticle, type Locale, type WidgetConfig } from "yunidesk";
 import { SupportApiError, SupportClient, type ConnectionState } from "yunidesk/client";
 import { createFrameStorage } from "../lib/storage";
 import { frameReducer } from "./frameReducer";
@@ -32,7 +32,7 @@ async function resolveToken(session: SessionSpec | null): Promise<string | null>
 }
 
 /** One SupportClient, the shared messenger reducer, bootstrap and realtime. */
-export function useMessengerData(session: SessionSpec | null, openConversationId: string | null) {
+export function useMessengerData(session: SessionSpec | null, openConversationId: string | null, locale: Locale) {
   const sessionRef = useRef(session);
   sessionRef.current = session;
   const openRef = useRef(openConversationId);
@@ -76,13 +76,6 @@ export function useMessengerData(session: SessionSpec | null, openConversationId
     dispatch({ type: "event", event: { type: "presence", online: data.config.online } });
     setStatus("ready");
     setError(null);
-    // The FAQ is extra: if it fails, the messenger still works without the Help section.
-    client
-      .help()
-      .then((page) => {
-        if (seq === loadSeq.current) setHelp(page.items);
-      })
-      .catch(() => undefined);
   }, [client]);
 
   const start = useCallback(async () => {
@@ -129,6 +122,20 @@ export function useMessengerData(session: SessionSpec | null, openConversationId
       cancelled = true;
     };
   }, [client, sessionKey, start]);
+
+  // The FAQ in the visitor's language; if it fails, the messenger works without the Help section.
+  const ready = status === "ready";
+  useEffect(() => {
+    if (!ready) return;
+    let cancelled = false;
+    client
+      .help(locale)
+      .then((page) => !cancelled && setHelp(page.items))
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [client, ready, locale]);
 
   const hasTyping = Object.keys(state.typing).length > 0;
   useEffect(() => {

@@ -4,7 +4,7 @@ import { getAssistant, isAssistantReady } from "../lib/assistant/settings";
 import { Hono } from "hono";
 import { z } from "zod";
 import { verifyUserToken } from "yunidesk/identity";
-import type { BootstrapResponse, Channel, SessionResponse, WidgetConfig } from "yunidesk";
+import { resolveLocale, type BootstrapResponse, type Channel, type SessionResponse, type WidgetConfig } from "yunidesk";
 import { clientIp, limit, publicOrigin, readBody, type AppContext, type AppEnv } from "../app-env";
 import {
   CONTACT_VISIBLE_SQL,
@@ -205,7 +205,7 @@ contactRoutes.get("/bootstrap", async (c) => {
 
 contactRoutes.get("/help", async (c) => {
   c.header("cache-control", "private, max-age=60");
-  return c.json({ items: await listHelpArticles(c.env) });
+  return c.json({ items: await listHelpArticles(c.env, resolveLocale(c.req.query("locale"))) });
 });
 
 contactRoutes.get("/conversations", async (c) => c.json({ items: await listContactConversations(c) }));

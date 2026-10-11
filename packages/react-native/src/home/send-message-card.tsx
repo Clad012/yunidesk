@@ -44,12 +44,12 @@ export function SendMessageCard({ config, online, theme, strings, onPress }: Sen
           width: 36,
           height: 36,
           borderRadius: 18,
-          backgroundColor: theme.brand,
+          backgroundColor: theme.accent,
           alignItems: "center",
           justifyContent: "center",
         }}
       >
-        <Icon name="forward" size={14} color={theme.onBrand} weight={2.4} />
+        <Icon name="forward" size={14} color={theme.onAccent} weight={2.4} />
       </View>
     </Pressable>
   );

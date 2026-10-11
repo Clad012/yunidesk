@@ -18,13 +18,13 @@ export const UnreadBadge = memo(function UnreadBadge({ count, theme, strings }: 
         paddingHorizontal: 7,
         paddingVertical: 2,
         borderRadius: 999,
-        backgroundColor: theme.brand,
+        backgroundColor: theme.accent,
         alignItems: "center",
       }}
       accessible
       accessibilityLabel={format(strings.unreadBadge, { n: count })}
     >
-      <Text style={{ color: theme.onBrand, fontSize: 12, fontWeight: "700" }}>{count > 99 ? "99+" : count}</Text>
+      <Text style={{ color: theme.onAccent, fontSize: 12, fontWeight: "700" }}>{count > 99 ? "99+" : count}</Text>
     </View>
   );
 });
