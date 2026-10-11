@@ -81,7 +81,7 @@ export function EmailPromptCard() {
           textContentType="emailAddress"
           returnKeyType="done"
           keyboardAppearance={theme.scheme}
-          selectionColor={theme.brand}
+          selectionColor={theme.accent}
           style={{
             flex: 1,
             minHeight: 44,
@@ -103,14 +103,14 @@ export function EmailPromptCard() {
             borderRadius: 14,
             alignItems: "center",
             justifyContent: "center",
-            backgroundColor: theme.brand,
+            backgroundColor: theme.accent,
             opacity: pressed ? 0.8 : 1,
           })}
         >
           {busy ? (
-            <ActivityIndicator color={theme.onBrand} />
+            <ActivityIndicator color={theme.onAccent} />
           ) : (
-            <Text style={{ color: theme.onBrand, fontSize: 15, fontWeight: "700" }}>{strings.emailSave}</Text>
+            <Text style={{ color: theme.onAccent, fontSize: 15, fontWeight: "700" }}>{strings.emailSave}</Text>
           )}
         </Pressable>
       </View>

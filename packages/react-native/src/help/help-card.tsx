@@ -68,7 +68,7 @@ export function HelpCard({ articles, theme, strings, onOpenArticle, onAsk }: Hel
             })}
           >
             <Text style={{ flex: 1, color: theme.text, fontSize: 15 }}>{article.title}</Text>
-            <Icon name="forward" size={12} color={theme.brand} weight={2.2} />
+            <Icon name="forward" size={12} color={theme.accent} weight={2.2} />
           </Pressable>
         ))
       ) : (
@@ -81,11 +81,11 @@ export function HelpCard({ articles, theme, strings, onOpenArticle, onAsk }: Hel
               borderRadius: 999,
               paddingHorizontal: 16,
               paddingVertical: 9,
-              backgroundColor: theme.brand,
+              backgroundColor: theme.accent,
               opacity: pressed ? 0.8 : 1,
             })}
           >
-            <Text style={{ color: theme.onBrand, fontSize: 14, fontWeight: "600" }}>{strings.askUsInstead}</Text>
+            <Text style={{ color: theme.onAccent, fontSize: 14, fontWeight: "600" }}>{strings.askUsInstead}</Text>
           </Pressable>
         </View>
       )}

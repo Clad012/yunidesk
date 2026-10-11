@@ -117,8 +117,8 @@ export function Composer({ typingConversationId, onSend, safeBottom = true, init
             multiline
             maxLength={MAX_MESSAGE_LENGTH}
             keyboardAppearance={theme.scheme}
-            selectionColor={theme.brand}
-            cursorColor={theme.brand}
+            selectionColor={theme.accent}
+            cursorColor={theme.accent}
             textAlignVertical="center"
             style={{
               color: theme.text,
@@ -135,8 +135,8 @@ export function Composer({ typingConversationId, onSend, safeBottom = true, init
           label={strings.send}
           onPress={send}
           disabled={!canSend}
-          color={canSend ? theme.onBrand : theme.textMuted}
-          background={canSend ? theme.brand : theme.surface}
+          color={canSend ? theme.onAccent : theme.textMuted}
+          background={canSend ? theme.accent : theme.surface}
           size={40}
         />
       </View>

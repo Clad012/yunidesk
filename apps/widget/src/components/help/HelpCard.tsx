@@ -36,7 +36,7 @@ export function HelpCard({ initialQuery = "" }: { initialQuery?: string }) {
               <X className="size-4" aria-hidden="true" />
             </button>
           ) : (
-            <Search className="mr-2 size-[18px] text-brand" aria-hidden="true" />
+            <Search className="mr-2 size-[18px] text-ink" aria-hidden="true" />
           )}
         </label>
       </div>
@@ -50,7 +50,7 @@ export function HelpCard({ initialQuery = "" }: { initialQuery?: string }) {
                 className="group flex w-full cursor-pointer items-center gap-3 px-4 py-2.5 text-left text-sm text-fg transition-colors hover:bg-soft"
               >
                 <span className="min-w-0 flex-1">{article.title}</span>
-                <ChevronRight className="size-4 shrink-0 text-brand transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
+                <ChevronRight className="size-4 shrink-0 text-ink transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
               </button>
             </li>
           ))}

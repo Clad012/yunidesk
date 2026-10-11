@@ -365,6 +365,8 @@ export interface KnowledgeItem {
   kind: "faq" | "article";
   title: string;
   body: string;
+  /** The language it is written in, or null for every language. Help shows customers their own. */
+  locale: Locale | null;
   createdAt: number;
   updatedAt: number;
 }
@@ -373,6 +375,8 @@ export interface KnowledgeInput {
   kind: "faq" | "article";
   title: string;
   body: string;
+  /** The language it is written in; null or left out for every language. */
+  locale?: Locale | null;
 }
 
 /**

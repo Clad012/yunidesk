@@ -91,7 +91,7 @@ function Chip({ draft, theme, strings, onRemove, onRetry }: ChipProps) {
                 width: `${Math.max(6, Math.round(progress * 100))}%`,
                 height: 4,
                 borderRadius: 2,
-                backgroundColor: theme.brand,
+                backgroundColor: theme.accent,
               }}
             />
           </View>

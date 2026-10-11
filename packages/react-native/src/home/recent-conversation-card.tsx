@@ -36,7 +36,7 @@ export function RecentConversationCard({
           {strings.recentMessage}
         </Text>
         <Pressable onPress={onSeeAll} accessibilityRole="button" hitSlop={12} style={{ paddingVertical: 8 }}>
-          <Text style={{ color: theme.brand, fontSize: 15, fontWeight: "600" }}>{strings.seeAll}</Text>
+          <Text style={{ color: theme.accent, fontSize: 15, fontWeight: "600" }}>{strings.seeAll}</Text>
         </Pressable>
       </View>
       <ConversationRow

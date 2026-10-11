@@ -23,7 +23,10 @@ export function KnowledgeRow({ item, editable, onEdit, onDelete }: KnowledgeRowP
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-medium">{item.title}</p>
         <p className="truncate text-sm text-muted-foreground">{firstLine(item.body)}</p>
-        <p className="mt-0.5 text-xs text-muted-foreground">{fmt(copy.knowledge.updated, { time: formatDateTime(item.updatedAt) })}</p>
+        <p className="mt-0.5 text-xs text-muted-foreground">
+          {item.locale ? `${copy.knowledge[`language_${item.locale}`]} · ` : ""}
+          {fmt(copy.knowledge.updated, { time: formatDateTime(item.updatedAt) })}
+        </p>
       </div>
       {editable ? (
         <>

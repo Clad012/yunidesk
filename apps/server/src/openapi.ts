@@ -252,7 +252,7 @@ export const openApiDocument = {
     "/assistant/knowledge": {
       get: op("listKnowledge", "assistant:write", "FAQ entries and articles", { responses: { "200": ok({ type: "object" }), ...errors } }),
       post: op("createKnowledge", "assistant:write", "Add an FAQ entry or an article", {
-        requestBody: { content: json({ type: "object", required: ["kind", "title", "body"], properties: { kind: { enum: ["faq", "article"] }, title: { type: "string" }, body: { type: "string" } } }) },
+        requestBody: { content: json({ type: "object", required: ["kind", "title", "body"], properties: { kind: { enum: ["faq", "article"] }, title: { type: "string" }, body: { type: "string" }, locale: { enum: ["en", "fr", null], description: "Language; null for every language" } } }) },
         responses: { "201": ok({ type: "object" }, "Created"), ...errors },
       }),
     },

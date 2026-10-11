@@ -35,6 +35,17 @@ export function readableTextColor(background: string): string {
   return light >= dark ? LIGHT_TEXT : DARK_TEXT;
 }
 
+/**
+ * The brand colour when it stands out on `background` (WCAG 3:1, enough for bold text and icons),
+ * otherwise the screen's text colour. A near-black brand on a dark screen would vanish.
+ */
+export function accentColor(brand: string, background: string, text: string): string {
+  const rgb = parseHexColor(brand);
+  const bg = parseHexColor(background);
+  if (!rgb || !bg) return text;
+  return contrastRatio(rgb, bg) >= 3 ? brand : text;
+}
+
 /** `rgba()` for a hex colour; returns the input unchanged if it is not hex. */
 export function withAlpha(color: string, alpha: number): string {
   const rgb = parseHexColor(color);

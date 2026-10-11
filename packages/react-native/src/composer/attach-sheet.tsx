@@ -28,7 +28,7 @@ export function useAttachSheet(
           options: [...sources.map((s) => sourceLabel(strings, s)), strings.cancel],
           cancelButtonIndex: sources.length,
           userInterfaceStyle: theme.scheme,
-          tintColor: theme.brand,
+          tintColor: theme.accent,
         },
         (index) => {
           const source = sources[index];
@@ -38,7 +38,7 @@ export function useAttachSheet(
     } else {
       setVisible(true);
     }
-  }, [onPick, sources, strings, theme.brand, theme.scheme]);
+  }, [onPick, sources, strings, theme.accent, theme.scheme]);
 
   const choose = useCallback(
     (source: PickSource | null) => {

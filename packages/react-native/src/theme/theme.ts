@@ -1,4 +1,4 @@
-import { parseHexColor, readableTextColor, withAlpha } from "./colors";
+import { accentColor, parseHexColor, readableTextColor, withAlpha } from "./colors";
 
 export interface SupportPalette {
   /** Screen background. */
@@ -32,6 +32,10 @@ export interface ResolvedTheme extends SupportPalette {
   onBrand: string;
   /** A light tint of the brand colour, for soft fills. */
   brandSoft: string;
+  /** Brand-coloured text, icons and buttons on the screen: the brand, or the text colour when the brand wouldn't show. */
+  accent: string;
+  /** Text and icons drawn on `accent`. */
+  onAccent: string;
 }
 
 const LIGHT: SupportPalette = {
@@ -77,5 +81,11 @@ export function resolveTheme(
     brand,
     onBrand: readableTextColor(brand),
     brandSoft: withAlpha(brand, scheme === "dark" ? 0.22 : 0.12),
+    ...accents(brand, palette),
   };
+}
+
+function accents(brand: string, palette: SupportPalette): { accent: string; onAccent: string } {
+  const accent = accentColor(brand, palette.background, palette.text);
+  return { accent, onAccent: readableTextColor(accent) };
 }

@@ -105,12 +105,12 @@ export function SupportConversationList({
             paddingHorizontal: 22,
             paddingVertical: 14,
             borderRadius: 999,
-            backgroundColor: theme.brand,
+            backgroundColor: theme.accent,
             opacity: pressed ? 0.8 : 1,
           })}
         >
-          <Icon name="plus" size={14} color={theme.onBrand} weight={2.4} />
-          <Text style={{ color: theme.onBrand, fontSize: 16, fontWeight: "700" }}>{strings.newConversation}</Text>
+          <Icon name="plus" size={14} color={theme.onAccent} weight={2.4} />
+          <Text style={{ color: theme.onAccent, fontSize: 16, fontWeight: "700" }}>{strings.newConversation}</Text>
         </Pressable>
       </View>
     </View>
