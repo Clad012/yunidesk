@@ -1,4 +1,5 @@
 import { runAssistantTurn } from "../lib/assistant/engine";
+import { listHelpArticles } from "../lib/assistant/knowledge";
 import { getAssistant, isAssistantReady } from "../lib/assistant/settings";
 import { Hono } from "hono";
 import { z } from "zod";
@@ -200,6 +201,11 @@ function channelOf(c: AppContext): Channel {
 contactRoutes.get("/bootstrap", async (c) => {
   const [config, conversations] = await Promise.all([widgetConfig(c), listContactConversations(c)]);
   return c.json<BootstrapResponse>({ contact: toContactProfile(c.get("contact")), config, conversations });
+});
+
+contactRoutes.get("/help", async (c) => {
+  c.header("cache-control", "private, max-age=60");
+  return c.json({ items: await listHelpArticles(c.env) });
 });
 
 contactRoutes.get("/conversations", async (c) => c.json({ items: await listContactConversations(c) }));

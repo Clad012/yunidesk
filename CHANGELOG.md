@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.5.0
+
+- **Help in the messenger**: the Home screen of the widget and of the React Native SDK shows your FAQ entries with a search box (accents and case ignored, works offline over the loaded list). Tapping one opens the answer, with "Ask a question" underneath. A search with no answer offers to ask the team with the search already typed.
+  - Only knowledge items of kind `faq` are shown; `article` items stay for the assistant only.
+  - New contact route `GET /api/v1/help`, `SupportClient.help()`, `searchHelp()` and the `HelpArticle` type in `yunidesk`.
+  - React Native: `SupportHome` gains `onOpenArticle` (the Help section shows only when it is set; `SupportMessenger` sets it), `onNewConversation` may receive the text to prefill, new `SupportHelpArticle` screen and `SupportConversation.initialText`.
+
 ## 0.4.0
 
 - **AI assistant**: answers customers first from your knowledge (FAQ entries and articles, full-text search) and your tools (signed https calls to your server), with any OpenRouter model (default `z-ai/glm-5.3-flash`).

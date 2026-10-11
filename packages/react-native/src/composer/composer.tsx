@@ -15,13 +15,15 @@ export interface ComposerProps {
   onSend: (body: string, attachments: Attachment[]) => void;
   /** Pad for the home indicator (default true). Off when the host already pads the bottom. */
   safeBottom?: boolean;
+  /** Text already in the box when it first shows (for example what was searched in Help). */
+  initialText?: string;
 }
 
-export function Composer({ typingConversationId, onSend, safeBottom = true }: ComposerProps) {
+export function Composer({ typingConversationId, onSend, safeBottom = true, initialText = "" }: ComposerProps) {
   const { client, theme, strings, attachmentPicker } = useSupportCore();
   const insets = useSafeAreaInsets();
   const keyboardVisible = useKeyboardVisible();
-  const [text, setText] = useState("");
+  const [text, setText] = useState(initialText);
   const files = useAttachments();
   const sheet = useAttachSheet(theme, strings, attachmentPicker?.sources ?? [], files.pick);
 

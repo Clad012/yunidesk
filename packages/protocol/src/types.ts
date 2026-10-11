@@ -243,6 +243,14 @@ export interface BootstrapResponse {
   conversations: ContactConversation[];
 }
 
+/** An FAQ entry shown in the messenger's Help section (knowledge items of kind `faq`). */
+export interface HelpArticle {
+  id: string;
+  title: string;
+  body: string;
+  updatedAt: number;
+}
+
 export interface SendMessageInput {
   body: string;
   attachmentIds?: string[];
@@ -350,7 +358,10 @@ export type AssistantSettingsPatch = Partial<Omit<AssistantSettings, "hasOpenRou
 
 export interface KnowledgeItem {
   id: string;
-  /** `faq`: a question and its answer. `article`: a longer how-to. */
+  /**
+   * `faq`: a question and its answer, shown to customers in the messenger's Help section and used
+   * by the assistant. `article`: background knowledge only the assistant reads.
+   */
   kind: "faq" | "article";
   title: string;
   body: string;

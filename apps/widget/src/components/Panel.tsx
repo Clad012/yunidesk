@@ -7,6 +7,7 @@ import { TabBar } from "./common/TabBar";
 import { HomeScreen } from "./home/HomeScreen";
 import { MessagesScreen } from "./messages/MessagesScreen";
 import { ConversationScreen } from "./conversation/ConversationScreen";
+import { ArticleScreen } from "./help/ArticleScreen";
 import { cn } from "../lib/cn";
 
 interface PanelProps {
@@ -62,10 +63,12 @@ export function Panel({ phase, alignment, fullScreen, withLauncher }: PanelProps
       <ConnectionBanner />
       {route.name === "conversation" ? (
         <ConversationScreen key={route.key} conversationId={route.id} from={route.from} />
+      ) : route.name === "article" ? (
+        <ArticleScreen key={route.id} articleId={route.id} helpQuery={route.helpQuery} />
       ) : (
         <>
           <div key={route.name} className="ys-fade relative flex min-h-0 flex-1 flex-col">
-            {route.name === "home" ? <HomeScreen /> : <MessagesScreen />}
+            {route.name === "home" ? <HomeScreen helpQuery={route.helpQuery} /> : <MessagesScreen />}
           </div>
           <TabBar active={route.name} />
         </>

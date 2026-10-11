@@ -4,6 +4,7 @@ import type {
   ApiErrorBody,
   Attachment,
   BootstrapResponse,
+  HelpArticle,
   Channel,
   ClientEvent,
   ContactConversation,
@@ -132,6 +133,11 @@ export class SupportClient {
 
   bootstrap(): Promise<BootstrapResponse> {
     return this.request("GET", "/api/v1/bootstrap");
+  }
+
+  /** The FAQ shown in the messenger's Help section. */
+  help(): Promise<{ items: HelpArticle[] }> {
+    return this.request("GET", "/api/v1/help");
   }
 
   listConversations(): Promise<{ items: ContactConversation[] }> {

@@ -95,6 +95,15 @@ const en = {
   talkToHumanPending: "Connecting you to the team…",
   talkToHumanFailed: "We couldn't reach the team. Please try again.",
   handedOff: "We've passed you to the team — a person will reply here.",
+  // Help (FAQ)
+  help: "Help",
+  searchHelp: "Search for help",
+  clearSearch: "Clear search",
+  helpNoResults: "No answer found for \u201c{query}\u201d.",
+  askUsInstead: "Ask us instead",
+  stillNeedHelp: "Still need help?",
+  stillNeedHelpHint: "Send us a message and we'll sort it out.",
+  askAQuestion: "Ask a question",
 };
 
 export type SupportStrings = typeof en;
@@ -193,6 +202,15 @@ const fr: SupportStrings = {
   talkToHumanPending: "Mise en relation avec l'équipe…",
   talkToHumanFailed: "Impossible de joindre l'équipe. Veuillez réessayer.",
   handedOff: "Nous vous avons transmis à l'équipe — une personne vous répondra ici.",
+  // Aide (FAQ)
+  help: "Aide",
+  searchHelp: "Rechercher dans l'aide",
+  clearSearch: "Effacer la recherche",
+  helpNoResults: "Aucune réponse trouvée pour « {query} ».",
+  askUsInstead: "Posez-nous la question",
+  stillNeedHelp: "Besoin d'aide supplémentaire ?",
+  stillNeedHelpHint: "Envoyez-nous un message, on s'en occupe.",
+  askAQuestion: "Poser une question",
 };
 
 const dictionaries: Record<Locale, SupportStrings> = { en, fr };

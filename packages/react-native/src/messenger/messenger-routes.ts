@@ -2,7 +2,11 @@ import type { MessengerRoute } from "../provider/support-context";
 
 // The messenger's own little stack. Kept pure so the back behaviour can be tested.
 
-export type Screen = { name: "home" } | { name: "messages" } | { name: "conversation"; conversationId: string | null };
+export type Screen =
+  | { name: "home" }
+  | { name: "messages" }
+  | { name: "conversation"; conversationId: string | null; initialText?: string }
+  | { name: "article"; articleId: string };
 
 /** The stack a messenger opens with. Opening on a conversation keeps the list underneath for Back. */
 export function initialStack(route: MessengerRoute): Screen[] {

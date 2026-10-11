@@ -10,8 +10,10 @@ export type Tab = "home" | "messages";
  * `from` is the tab the back button returns to.
  */
 export type Route =
-  | { name: Tab }
-  | { name: "conversation"; id: string | null; key: string; from: Tab };
+  | { name: Tab; helpQuery?: string }
+  | { name: "conversation"; id: string | null; key: string; from: Tab }
+  /** `helpQuery` is the search the customer came from, kept for Back. */
+  | { name: "article"; id: string; helpQuery: string };
 
 let routeSeq = 0;
 export function conversationRoute(id: string | null, from: Tab): Route {
@@ -35,6 +37,8 @@ export interface MessengerContextValue {
   /** Text handed over by showNewMessage(text); `nonce` changes on every call. */
   prefill: { text: string; nonce: number } | null;
   announce: (text: string) => void;
+  /** Opens a new conversation with `text` already in the composer. */
+  startConversation: (text?: string) => void;
 }
 
 export const MessengerContext = createContext<MessengerContextValue | null>(null);

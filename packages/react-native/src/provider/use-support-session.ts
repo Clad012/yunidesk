@@ -4,6 +4,7 @@ import { SupportClient, type ConnectionState, type KeyValueStorage } from "yunid
 import {
   initialMessengerState,
   messengerReducer,
+  type HelpArticle,
   type ContactProfile,
   type MessengerAction,
   type MessengerState,
@@ -63,6 +64,7 @@ export function useSupportSession({ baseUrl, getUserToken, userId, storage }: Se
   const [failed, setFailed] = useState(false);
   const [connection, setConnection] = useState<ConnectionState>("idle");
   const [syncTick, setSyncTick] = useState(0);
+  const [help, setHelp] = useState<HelpArticle[]>([]);
   // Which identity a messenger screen asked to start; a user switch starts over.
   const [activatedFor, setActivatedFor] = useState<string | null>(null);
   const appActive = useAppActive();
@@ -102,6 +104,13 @@ export function useSupportSession({ baseUrl, getUserToken, userId, storage }: Se
       dispatch({ type: "event", event: { type: "presence", online: boot.config.online } });
       setReady(true);
       setFailed(false);
+      // The FAQ is extra: without it the messenger simply has no Help section.
+      client
+        .help()
+        .then((page) => {
+          if (generation.current === started) setHelp(page.items);
+        })
+        .catch(() => undefined);
     } catch {
       if (generation.current === started) setFailed(true);
     }
@@ -157,6 +166,7 @@ export function useSupportSession({ baseUrl, getUserToken, userId, storage }: Se
     dispatch,
     config,
     contact,
+    help,
     ready,
     failed,
     connection,

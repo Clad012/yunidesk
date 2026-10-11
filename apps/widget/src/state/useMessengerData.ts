@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
-import { initialMessengerState, type ContactProfile, type WidgetConfig } from "yunidesk";
+import { initialMessengerState, type ContactProfile, type HelpArticle, type WidgetConfig } from "yunidesk";
 import { SupportApiError, SupportClient, type ConnectionState } from "yunidesk/client";
 import { createFrameStorage } from "../lib/storage";
 import { frameReducer } from "./frameReducer";
@@ -54,6 +54,7 @@ export function useMessengerData(session: SessionSpec | null, openConversationId
   const [contact, setContact] = useState<ContactProfile | null>(null);
   const [config, setConfig] = useState<WidgetConfig | null>(cachedConfig);
   const [connection, setConnection] = useState<ConnectionState>("idle");
+  const [help, setHelp] = useState<HelpArticle[]>([]);
   const loadSeq = useRef(0);
 
   const loadThread = useCallback(
@@ -75,6 +76,13 @@ export function useMessengerData(session: SessionSpec | null, openConversationId
     dispatch({ type: "event", event: { type: "presence", online: data.config.online } });
     setStatus("ready");
     setError(null);
+    // The FAQ is extra: if it fails, the messenger still works without the Help section.
+    client
+      .help()
+      .then((page) => {
+        if (seq === loadSeq.current) setHelp(page.items);
+      })
+      .catch(() => undefined);
   }, [client]);
 
   const start = useCallback(async () => {
@@ -132,7 +140,7 @@ export function useMessengerData(session: SessionSpec | null, openConversationId
   /** Logout: forget the anonymous visitor stored on this device. */
   const forget = useCallback(() => client.reset(), [client]);
 
-  return { client, state, dispatch, status, error, contact, config, connection, retry: start, loadThread, forget };
+  return { client, state, dispatch, status, error, contact, config, help, connection, retry: start, loadThread, forget };
 }
 
 export type MessengerData = ReturnType<typeof useMessengerData>;

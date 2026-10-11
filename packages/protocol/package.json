@@ -1,6 +1,6 @@
 {
   "name": "yunidesk",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "private": false,
   "type": "module",
   "description": "Yunidesk client SDK core: types, the contact client (REST + realtime), identity tokens and webhook signatures for self-hosted Yunidesk support desks.",

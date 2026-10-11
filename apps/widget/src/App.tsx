@@ -83,6 +83,11 @@ export function App() {
   const hideLauncher = host.standalone || (host.boot?.hideDefaultLauncher ?? false);
   const panelOpen = panel.phase === "open" || panel.phase === "opening";
 
+  const startConversation = useCallback((text?: string) => {
+    setRoute(conversationRoute(null, "home"));
+    if (text) setPrefill({ text, nonce: Date.now() });
+  }, []);
+
   const value = useMemo<MessengerContextValue>(
     () => ({
       strings,
@@ -97,8 +102,9 @@ export function App() {
       closePanel: panel.close,
       prefill,
       announce,
+      startConversation,
     }),
-    [strings, locale, data, actions, route, fullScreen, host.standalone, hideLauncher, panelOpen, panel.close, prefill, announce],
+    [strings, locale, data, actions, route, fullScreen, host.standalone, hideLauncher, panelOpen, panel.close, prefill, announce, startConversation],
   );
 
   if (!host.boot) return null;
