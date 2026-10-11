@@ -152,7 +152,7 @@ async function insertMessage(
   attachments: AttachmentRow[],
   event: SystemEvent | null = null,
   options: { ai?: boolean } = {},
-): Promise<{ conversation: ConversationRow; message: Message }> {
+): Promise<{ conversation: ConversationRow; message: Message; delivered: Promise<void> }> {
   const now = Math.max(Date.now(), conversation.updated_at);
   const id = newId("msg");
   const body = draft.body.trim();
@@ -236,7 +236,7 @@ async function insertMessage(
         .first<MessageRow>();
       if (existing && sameAuthor(existing, author)) {
         const [message] = await toMessages(env, origin, [existing]);
-        return { conversation, message: message! };
+        return { conversation, message: message!, delivered: Promise.resolve() };
       }
     }
     throw error;
@@ -258,7 +258,10 @@ async function insertMessage(
   const agents = await loadAgents(env);
   const [message] = await toMessages(env, origin, [row], agents);
 
-  ctx.waitUntil(broadcastMessage(env, updated, message!, row, agents));
+  const delivered = broadcastMessage(env, updated, message!, row, agents).catch((error: unknown) =>
+    console.warn("message broadcast failed", error instanceof Error ? error.message : String(error)),
+  );
+  ctx.waitUntil(delivered);
   if (kind === "text") {
     ctx.waitUntil(
       contactSummary(env, conversation.contact_id).then((contact) =>
@@ -273,7 +276,7 @@ async function insertMessage(
     );
     if (author.type === "agent") ctx.waitUntil(contactChannel(env, conversation.contact_id).scheduleUnreadCheck());
   }
-  return { conversation: updated, message: message! };
+  return { conversation: updated, message: message!, delivered };
 }
 
 async function broadcastMessage(
@@ -473,7 +476,7 @@ export async function postAssistantMessage(
   conversation: ConversationRow,
   agent: AgentRow,
   body: string,
-): Promise<{ conversation: ConversationRow; message: Message }> {
+): Promise<{ conversation: ConversationRow; message: Message; delivered: Promise<void> }> {
   return insertMessage(
     env,
     ctx,

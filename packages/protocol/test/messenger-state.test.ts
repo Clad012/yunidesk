@@ -150,6 +150,16 @@ describe("assistant replies while they are written", () => {
     expect(state.assistantDrafts[conversationId]).toBeUndefined();
   });
 
+  it("keeps the finished text on screen when 'done' arrives before the final message", async () => {
+    const { messengerReducer, initialMessengerState } = await import("../src/messenger-state");
+    let state = messengerReducer(initialMessengerState, ev({ type: "event", event: { type: "assistant.delta", conversationId, streamId: "s1", text: "Hello there" } }));
+    state = messengerReducer(state, ev({ type: "event", event: { type: "assistant.status", conversationId, streamId: "s1", status: "done" } }));
+    expect(state.assistantDrafts[conversationId]?.text).toBe("Hello there");
+    // The final message never came (socket dropped): the refetched page clears it.
+    state = messengerReducer(state, { type: "page", conversationId, messages: [], olderCursor: null, older: false });
+    expect(state.assistantDrafts[conversationId]).toBeUndefined();
+  });
+
   it("drops a failed reply, but not when the failure is about an older one", async () => {
     const { messengerReducer, initialMessengerState } = await import("../src/messenger-state");
     let state = messengerReducer(initialMessengerState, ev({ type: "event", event: { type: "assistant.delta", conversationId, streamId: "s2", text: "Hi" } }));
