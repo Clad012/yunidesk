@@ -6,6 +6,11 @@ import type {
   AgentSendMessageInput,
   ApiKey,
   ApiScope,
+  AssistantSettings,
+  AssistantSettingsPatch,
+  AssistantTool,
+  AssistantToolInput,
+  AssistantUsage,
   Attachment,
   CannedResponse,
   Contact,
@@ -13,6 +18,8 @@ import type {
   ConversationStatus,
   InboxCounts,
   Invite,
+  KnowledgeInput,
+  KnowledgeItem,
   Message,
   Page,
   PublicAgent,
@@ -58,6 +65,15 @@ export interface WebhookEndpointInput {
 
 export type WebhookEndpointPatch = Partial<WebhookEndpointInput> & { enabled?: boolean };
 
+/** A test answer from the assistant: nothing is saved and no customer sees it. */
+export interface AssistantPreview {
+  reply: string;
+  sources: { id: string; title: string }[];
+  toolCalls: { name: string; ok: boolean }[];
+}
+
+export type AssistantToolPatch = Partial<AssistantToolInput>;
+
 export const queryKeys = {
   bootstrap: ["bootstrap"] as const,
   counts: ["counts"] as const,
@@ -73,6 +89,11 @@ export const queryKeys = {
   apiKeys: ["api-keys"] as const,
   webhookEndpoints: ["webhook-endpoints"] as const,
   webhookDeliveries: (endpointId: string) => ["webhook-deliveries", endpointId] as const,
+  assistant: ["assistant"] as const,
+  assistantUsage: ["assistant", "usage"] as const,
+  knowledgeLists: ["assistant", "knowledge"] as const,
+  knowledge: (q: string) => ["assistant", "knowledge", q] as const,
+  assistantTools: ["assistant", "tools"] as const,
 };
 
 const enc = encodeURIComponent;
@@ -154,4 +175,24 @@ export const endpoints = {
     api<WebhookEndpointWithSecret>(`/api/agent/webhook-endpoints/${enc(id)}/roll-secret`, { body: { expireCurrentInHours } }),
   testWebhookEndpoint: (id: string) => api<WebhookDelivery | null>(`/api/agent/webhook-endpoints/${enc(id)}/test`, { method: "POST" }),
   webhookDeliveries: (id: string) => api<{ items: WebhookDelivery[] }>(`/api/agent/webhook-endpoints/${enc(id)}/deliveries`),
+
+  assistant: () => api<AssistantSettings>("/api/agent/assistant"),
+  patchAssistant: (body: AssistantSettingsPatch) => api<AssistantSettings>("/api/agent/assistant", { method: "PATCH", body: { ...body } }),
+  setOpenRouterKey: (key: string) => api<AssistantSettings>("/api/agent/assistant/openrouter-key", { method: "PUT", body: { key } }),
+  removeOpenRouterKey: () => api<AssistantSettings>("/api/agent/assistant/openrouter-key", { method: "DELETE" }),
+  assistantUsage: () => api<AssistantUsage>("/api/agent/assistant/usage"),
+  previewAssistant: (message: string) => api<AssistantPreview>("/api/agent/assistant/preview", { body: { message } }),
+
+  knowledge: (q: string) => api<{ items: KnowledgeItem[] }>(`/api/agent/assistant/knowledge${q ? `?q=${enc(q)}` : ""}`),
+  createKnowledge: (body: KnowledgeInput) => api<KnowledgeItem>("/api/agent/assistant/knowledge", { body: { ...body } }),
+  patchKnowledge: (id: string, body: Partial<KnowledgeInput>) =>
+    api<KnowledgeItem>(`/api/agent/assistant/knowledge/${enc(id)}`, { method: "PATCH", body: { ...body } }),
+  deleteKnowledge: (id: string) => api<{ ok: true }>(`/api/agent/assistant/knowledge/${enc(id)}`, { method: "DELETE" }),
+
+  assistantTools: () => api<{ items: AssistantTool[] }>("/api/agent/assistant/tools"),
+  createAssistantTool: (body: AssistantToolInput) => api<AssistantTool>("/api/agent/assistant/tools", { body: { ...body } }),
+  patchAssistantTool: (id: string, body: AssistantToolPatch) =>
+    api<AssistantTool>(`/api/agent/assistant/tools/${enc(id)}`, { method: "PATCH", body: { ...body } }),
+  deleteAssistantTool: (id: string) => api<{ ok: true }>(`/api/agent/assistant/tools/${enc(id)}`, { method: "DELETE" }),
+  rollAssistantToolSecret: () => api<{ secret: string }>("/api/agent/assistant/tools/roll-secret", { method: "POST" }),
 };

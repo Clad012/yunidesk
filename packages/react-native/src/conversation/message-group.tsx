@@ -9,8 +9,10 @@ import {
   type TimelineMessage,
 } from "yunidesk";
 import type { ResolvedTheme } from "../theme/theme";
+import { AssistantAvatar } from "../ui/assistant-avatar";
 import { Avatar } from "../ui/avatar";
 import { MessageBubble } from "./message-bubble";
+import { TalkToHuman } from "./talk-to-human";
 
 type Group = Extract<TimelineItem, { type: "group" }>;
 
@@ -20,9 +22,13 @@ export interface MessageGroupProps {
   strings: SupportStrings;
   locale: Locale;
   teamName: string;
+  /** "Acme assistant · AI": the name on the assistant's messages. */
+  assistantName: string;
   maxWidth: number;
   /** The contact's message the team has read, for "Seen". */
   seenId: string | null;
+  /** Set while the assistant still answers: its groups offer "Talk to a human" for this conversation. */
+  handoffConversationId: string | null;
   onRetry: (message: TimelineMessage) => void;
   onOpenImage: (attachment: Attachment) => void;
 }
@@ -52,18 +58,21 @@ export const MessageGroup = memo(function MessageGroup({
   strings,
   locale,
   teamName,
+  assistantName,
   maxWidth,
   seenId,
+  handoffConversationId,
   onRetry,
   onOpenImage,
 }: MessageGroupProps) {
   const mine = group.side === "contact";
+  const ai = !mine && group.messages[0]?.ai === true;
   const messages = group.messages;
   const lastMessage = messages[messages.length - 1];
   const failedIndex = messages.findIndex((m) => m.delivery === "failed");
   // Show the state of the newest message, or of an earlier one that failed (it needs the tap).
   const status = statusOf(failedIndex >= 0 ? messages[failedIndex] : lastMessage, seenId, strings, locale);
-  const name = group.agent?.name ?? teamName;
+  const name = ai ? assistantName : (group.agent?.name ?? teamName);
   return (
     <View style={{ paddingHorizontal: 12, paddingVertical: 4, alignItems: mine ? "flex-end" : "flex-start" }}>
       {!mine ? (
@@ -74,7 +83,8 @@ export const MessageGroup = memo(function MessageGroup({
         </Text>
       ) : null}
       <View style={{ flexDirection: "row", alignItems: "flex-end", gap: 8 }}>
-        {!mine ? <Avatar agent={group.agent} fallbackName={teamName} size={AVATAR} theme={theme} /> : null}
+        {ai ? <AssistantAvatar badge={strings.aiBadge} size={AVATAR} theme={theme} /> : null}
+        {!mine && !ai ? <Avatar agent={group.agent} fallbackName={teamName} size={AVATAR} theme={theme} /> : null}
         <View style={{ gap: 3, alignItems: mine ? "flex-end" : "flex-start" }}>
           {messages.map((message, index) => (
             <MessageBubble
@@ -105,6 +115,11 @@ export const MessageGroup = memo(function MessageGroup({
         >
           {status.text}
         </Text>
+      ) : null}
+      {ai && handoffConversationId ? (
+        <View style={{ marginLeft: AVATAR + 8 }}>
+          <TalkToHuman conversationId={handoffConversationId} theme={theme} strings={strings} />
+        </View>
       ) : null}
     </View>
   );

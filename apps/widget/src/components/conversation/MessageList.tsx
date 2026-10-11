@@ -5,6 +5,8 @@ import { useMessenger } from "../../state/context";
 import { isTempId } from "../../state/useActions";
 import { useStickyScroll } from "../../hooks/useStickyScroll";
 import { ErrorState, Skeleton } from "../common/States";
+import { assistantLabel } from "../../lib/preview";
+import { AssistantDraftBubble } from "./AssistantDraftBubble";
 import { EmailCard } from "./EmailCard";
 import { MessageGroup } from "./MessageGroup";
 import { RatingCard } from "./RatingCard";
@@ -29,6 +31,8 @@ export function MessageList({ conversationId, conversation, thread, loadError, o
   const seenId = lastSeenMessageId(messages, conversation?.agentLastReadAt ?? null);
   const realId = conversationId && !isTempId(conversationId) ? conversationId : null;
   const typing = conversationId ? data.state.typing[conversationId] : undefined;
+  const draft = realId ? data.state.assistantDrafts[realId] : undefined;
+  const handoffConversationId = realId && conversation?.aiActive ? realId : null;
   const last = messages[messages.length - 1];
   const lastKey = last ? (last.clientId ?? last.id) : null;
   const resolved = conversation?.status === "resolved";
@@ -39,7 +43,7 @@ export function MessageList({ conversationId, conversation, thread, loadError, o
   const emailAfter = askEmail ? items.find((i) => i.type === "group" && i.side === "contact")?.key : undefined;
 
   const scroll = useStickyScroll(scrollRef, contentRef, {
-    contentKey: [messages.length, lastKey, last?.delivery, typing ? 1 : 0, conversation?.status, conversation?.rating?.score, seenId, askEmail, contact?.email].join("|"),
+    contentKey: [messages.length, lastKey, last?.delivery, typing ? 1 : 0, draft?.status, draft?.text.length, conversation?.aiActive, conversation?.status, conversation?.rating?.score, seenId, askEmail, contact?.email].join("|"),
     lastId: lastKey,
     firstId: messages[0]?.id ?? null,
     lastIsMine: last?.authorType === "contact",
@@ -54,7 +58,7 @@ export function MessageList({ conversationId, conversation, thread, loadError, o
     const previous = announced.current;
     announced.current = lastKey;
     if (previous === null || !last || last.authorType !== "agent" || last.kind !== "text") return;
-    const name = last.agent?.name ?? config?.teamName ?? strings.team;
+    const name = last.ai ? assistantLabel(strings, config) : (last.agent?.name ?? config?.teamName ?? strings.team);
     announce(format(strings.messageFrom, { name, body: last.body || strings.attachmentPreview }));
   }, [lastKey, last, announce, config, strings]);
 
@@ -76,7 +80,13 @@ export function MessageList({ conversationId, conversation, thread, loadError, o
             if (item.type === "event") return <EventMarker key={item.key} message={item.message} />;
             return (
               <Fragment key={item.key}>
-                <MessageGroup group={item} seenId={seenId} onRetry={onRetry} onOpenImage={onOpenImage} />
+                <MessageGroup
+                  group={item}
+                  seenId={seenId}
+                  handoffConversationId={handoffConversationId}
+                  onRetry={onRetry}
+                  onOpenImage={onOpenImage}
+                />
                 {item.key === emailAfter && <EmailCard />}
               </Fragment>
             );
@@ -85,6 +95,7 @@ export function MessageList({ conversationId, conversation, thread, loadError, o
             <StatusMarker resolved label={strings.conversationResolved} />
           )}
           {resolved && conversation && <RatingCard conversation={conversation} />}
+          {draft && <AssistantDraftBubble draft={draft} />}
           {typing && <TypingIndicator agent={typing.agent} />}
         </div>
       </div>

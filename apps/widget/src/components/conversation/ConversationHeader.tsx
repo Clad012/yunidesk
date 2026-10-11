@@ -3,13 +3,15 @@ import { replyTimeLabel, type ContactConversation } from "yunidesk";
 import { useMessenger, type Tab } from "../../state/context";
 import { AvatarStack, TeamAvatar } from "../common/Avatar";
 import { CloseButton } from "../common/CloseButton";
+import { participantName } from "../../lib/preview";
 import { IconButton } from "../common/IconButton";
 
 export function ConversationHeader({ conversation, from }: { conversation: ContactConversation | null; from: Tab }) {
   const { strings, data, navigate } = useMessenger();
   const config = data.config;
   const participants = conversation?.participants.length ? conversation.participants : (config?.agents ?? []);
-  const title = conversation?.participants.length === 1 ? conversation.participants[0]!.name : (config?.teamName ?? strings.team);
+  const only = conversation?.participants.length === 1 ? conversation.participants[0]! : null;
+  const title = only ? participantName(only, config, strings) : (config?.teamName ?? strings.team);
   const online = data.state.teamOnline;
   return (
     <header className="relative z-10 flex h-16 shrink-0 items-center gap-2 bg-surface px-2 shadow-[0_10px_24px_-20px_rgb(20_20_40/0.4)]">

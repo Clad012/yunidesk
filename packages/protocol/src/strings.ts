@@ -84,6 +84,17 @@ const en = {
   seeAll: "See all",
   cameraAccessDenied: "Allow camera access in Settings to take a photo.",
   closeImage: "Close image",
+  // AI assistant
+  aiAssistant: "AI assistant",
+  aiBadge: "AI",
+  aiAuthor: "{name} · AI",
+  aiAssistantIntro: "Our AI assistant answers right away; you can ask for a person anytime.",
+  assistantReplying: "{name} is replying…",
+  talkToHuman: "Talk to a human",
+  talkToHumanHint: "Passes this conversation to a person on the team",
+  talkToHumanPending: "Connecting you to the team…",
+  talkToHumanFailed: "We couldn't reach the team. Please try again.",
+  handedOff: "We've passed you to the team — a person will reply here.",
 };
 
 export type SupportStrings = typeof en;
@@ -171,6 +182,17 @@ const fr: SupportStrings = {
   seeAll: "Tout voir",
   cameraAccessDenied: "Autorisez l'accès à l'appareil photo dans Réglages pour prendre une photo.",
   closeImage: "Fermer l'image",
+  // AI assistant
+  aiAssistant: "Assistant IA",
+  aiBadge: "IA",
+  aiAuthor: "{name} · IA",
+  aiAssistantIntro: "Notre assistant IA répond tout de suite ; vous pouvez demander une personne à tout moment.",
+  assistantReplying: "{name} répond…",
+  talkToHuman: "Parler à une personne",
+  talkToHumanHint: "Transmet cette conversation à une personne de l'équipe",
+  talkToHumanPending: "Mise en relation avec l'équipe…",
+  talkToHumanFailed: "Impossible de joindre l'équipe. Veuillez réessayer.",
+  handedOff: "Nous vous avons transmis à l'équipe — une personne vous répondra ici.",
 };
 
 const dictionaries: Record<Locale, SupportStrings> = { en, fr };

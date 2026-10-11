@@ -11,6 +11,7 @@ import { ChannelIcon } from "@/components/channel-icon";
 import { Tip } from "@/components/ui/tooltip";
 import { contactLabel, previewText } from "../lib/labels";
 import { useInboxParams } from "../lib/use-inbox-params";
+import { AiAnsweringChip } from "../conversation/ai-answering-chip";
 
 export function ConversationRow({ conversation, active }: { conversation: AgentConversation; active: boolean }) {
   const { agent } = useBootstrap();
@@ -45,6 +46,7 @@ export function ConversationRow({ conversation, active }: { conversation: AgentC
             <span className="text-muted-foreground">{prefix}</span>
             {text}
           </p>
+          {conversation.aiActive ? <AiAnsweringChip className="px-1 py-0 text-[10px]" /> : null}
           {assignee ? (
             <Tip label={fmt(copy.list.assignedTo, { name: assignee.name })}>
               <span>

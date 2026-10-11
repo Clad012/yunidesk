@@ -133,3 +133,43 @@ describe("lastSeenMessageId", () => {
     expect(lastSeenMessageId([...messages, msg("r", T0 + 30, { authorType: "agent", agent: ana })], T0 + 40)).toBeNull();
   });
 });
+
+describe("assistant replies while they are written", () => {
+  const conversationId = "cnv_1";
+  const ev = (event: Parameters<typeof messengerReducer>[1] extends infer A ? A : never) => event;
+  it("shows thinking, then growing text, never shrinking, and gives way to the final message", async () => {
+    const { messengerReducer, initialMessengerState } = await import("../src/messenger-state");
+    let state = messengerReducer(initialMessengerState, ev({ type: "event", event: { type: "assistant.status", conversationId, streamId: "s1", status: "thinking" } }));
+    expect(state.assistantDrafts[conversationId]).toEqual({ streamId: "s1", text: "", status: "thinking" });
+    state = messengerReducer(state, ev({ type: "event", event: { type: "assistant.delta", conversationId, streamId: "s1", text: "Hello the" } }));
+    state = messengerReducer(state, ev({ type: "event", event: { type: "assistant.delta", conversationId, streamId: "s1", text: "Hello" } }));
+    expect(state.assistantDrafts[conversationId]?.text).toBe("Hello the");
+    const message = { id: "msg_1", conversationId, authorType: "agent" as const, agent: null, kind: "text" as const, body: "Hello there", event: null, attachments: [], clientId: null, createdAt: 1, ai: true };
+    const conversation = { id: conversationId, status: "open", createdAt: 1, updatedAt: 1, lastMessageAt: 1, lastMessage: null, unreadCount: 1, agentLastReadAt: null, participants: [], rating: null } as never;
+    state = messengerReducer(state, ev({ type: "event", event: { type: "message.created", message, conversation } }));
+    expect(state.assistantDrafts[conversationId]).toBeUndefined();
+  });
+
+  it("drops a failed reply, but not when the failure is about an older one", async () => {
+    const { messengerReducer, initialMessengerState } = await import("../src/messenger-state");
+    let state = messengerReducer(initialMessengerState, ev({ type: "event", event: { type: "assistant.delta", conversationId, streamId: "s2", text: "Hi" } }));
+    state = messengerReducer(state, ev({ type: "event", event: { type: "assistant.status", conversationId, streamId: "s1", status: "failed" } }));
+    expect(state.assistantDrafts[conversationId]?.text).toBe("Hi");
+    state = messengerReducer(state, ev({ type: "event", event: { type: "assistant.status", conversationId, streamId: "s2", status: "failed" } }));
+    expect(state.assistantDrafts[conversationId]).toBeUndefined();
+  });
+});
+
+describe("timeline groups", () => {
+  it("never puts an AI reply in the same group as a teammate's", async () => {
+    const { buildTimeline } = await import("../src/messenger-state");
+    const base = { conversationId: "cnv_1", authorType: "agent" as const, agent: null, kind: "text" as const, event: null, attachments: [], clientId: null };
+    const items = buildTimeline([
+      { ...base, id: "m1", body: "From a person", createdAt: 1 },
+      { ...base, id: "m2", body: "From the AI", createdAt: 2, ai: true },
+      { ...base, id: "m3", body: "AI again", createdAt: 3, ai: true },
+    ]);
+    const groups = items.filter((item) => item.type === "group");
+    expect(groups.map((group) => (group.type === "group" ? group.messages.map((m) => m.id) : []))).toEqual([["m1"], ["m2", "m3"]]);
+  });
+});

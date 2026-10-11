@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.4.0
+
+- **AI assistant**: answers customers first from your knowledge (FAQ entries and articles, full-text search) and your tools (signed https calls to your server), with any OpenRouter model (default `z-ai/glm-5.3-flash`).
+  - Replies stream live in the widget and the React Native SDK. Every AI message is labelled and has a **Talk to a human** button that hands the conversation to the team.
+  - Limits: per customer, per IP for anonymous visitors, per reply, and a daily USD budget. Anything that stops the assistant hands the conversation to the team.
+  - Settings → Assistant in the dashboard, or `yunidesk.assistant.*` in `yunidesk/api` (new scope `assistant:write`).
+  - Migration `0004`, binding `ASSISTANT_LIMITER`.
+
 ## 0.3.0
 
 - **Event catalogue**: `GET /api/agent/events` (any API key) and `WEBHOOK_EVENT_CATALOG` in `yunidesk/webhooks` describe every event, with names and descriptions in English and French and the fields each carries. `yunidesk.events.list()` in `yunidesk/api`.

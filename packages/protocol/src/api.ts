@@ -2,6 +2,13 @@
 // or a mobile app: anyone could read it there.
 import type {
   AgentConversation,
+  AssistantSettings,
+  AssistantSettingsPatch,
+  AssistantTool,
+  AssistantToolInput,
+  AssistantUsage,
+  KnowledgeInput,
+  KnowledgeItem,
   AgentSendMessageInput,
   ApiKey,
   Contact,
@@ -129,6 +136,32 @@ export function createYunideskApi(options: YunideskApiOptions) {
       list: (params: { q?: string; cursor?: string } = {}) => call<Page<Contact>>("GET", `/contacts${query(params)}`),
       get: (contactId: string) =>
         call<{ contact: Contact; conversations: AgentConversation[] }>("GET", `/contacts/${id(contactId)}`),
+    },
+
+    /** The AI assistant (scope assistant:write). */
+    assistant: {
+      get: () => call<AssistantSettings>("GET", "/assistant"),
+      update: (patch: AssistantSettingsPatch) => call<AssistantSettings>("PATCH", "/assistant", patch),
+      /** Stored encrypted; never returned. Pass it from your server's secrets, never from a browser or an app. */
+      setOpenRouterKey: (key: string) => call<AssistantSettings>("PUT", "/assistant/openrouter-key", { key }),
+      clearOpenRouterKey: () => call<AssistantSettings>("DELETE", "/assistant/openrouter-key"),
+      usage: () => call<AssistantUsage>("GET", "/assistant/usage"),
+      knowledge: {
+        list: (params: { q?: string } = {}) => call<{ items: KnowledgeItem[] }>("GET", `/assistant/knowledge${query(params)}`),
+        create: (input: KnowledgeInput) => call<KnowledgeItem>("POST", "/assistant/knowledge", input),
+        update: (itemId: string, input: Partial<KnowledgeInput>) =>
+          call<KnowledgeItem>("PATCH", `/assistant/knowledge/${id(itemId)}`, input),
+        remove: (itemId: string) => call<{ ok: true }>("DELETE", `/assistant/knowledge/${id(itemId)}`),
+      },
+      tools: {
+        list: () => call<{ items: AssistantTool[] }>("GET", "/assistant/tools"),
+        create: (input: AssistantToolInput) => call<AssistantTool>("POST", "/assistant/tools", input),
+        update: (toolId: string, input: Partial<AssistantToolInput>) =>
+          call<AssistantTool>("PATCH", `/assistant/tools/${id(toolId)}`, input),
+        remove: (toolId: string) => call<{ ok: true }>("DELETE", `/assistant/tools/${id(toolId)}`),
+        /** The secret tool calls are signed with (verify with verifyWebhookSignature). Returned once. */
+        rollSecret: () => call<{ secret: string }>("POST", "/assistant/tools/roll-secret"),
+      },
     },
 
     /** Endpoints created with this key. Revoking the key disables them. */

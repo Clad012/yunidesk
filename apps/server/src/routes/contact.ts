@@ -1,3 +1,5 @@
+import { runAssistantTurn } from "../lib/assistant/engine";
+import { getAssistant, isAssistantReady } from "../lib/assistant/settings";
 import { Hono } from "hono";
 import { z } from "zod";
 import { verifyUserToken } from "yunidesk/identity";
@@ -10,6 +12,7 @@ import {
   markRead,
   postMessage,
   rateConversation,
+  handOffToTeam,
 } from "../db/conversations";
 import type { AgentRow, ContactRow, ConversationRow, MessageRow } from "../db/rows";
 import { toAttachment, toContactConversations, toContactProfile, toMessages, toPublicAgent } from "../db/serialize";
@@ -176,7 +179,9 @@ async function widgetConfig(c: AppContext): Promise<WidgetConfig> {
   const widget = toWidgetSettings(settings);
   // Only offer email follow-up when the server can actually send (and confirm) emails.
   widget.askEmailForAnonymous = widget.askEmailForAnonymous && emailConfigured(c.env);
-  return { ...widget, agents: results.map(toPublicAgent), online };
+  const assistant = await getAssistant(c.env);
+  const answersThisVisitor = isAssistantReady(assistant) && (c.get("identified") || assistant.allowAnonymous);
+  return { ...widget, agents: results.map(toPublicAgent), online, assistant: answersThisVisitor ? { name: assistant.name } : null };
 }
 
 async function listContactConversations(c: AppContext) {
@@ -209,6 +214,9 @@ contactRoutes.post("/conversations", async (c) => {
   await limit(c.env.WRITE_LIMITER, `contact:${contact.id}`);
   const draft = await readBody(c, draftSchema);
   const result = await createConversation(c.env, c.executionCtx as ExecutionContext, publicOrigin(c), contact.id, channelOf(c), draft);
+  c.executionCtx.waitUntil(
+    runAssistantTurn(c.env, c.executionCtx as ExecutionContext, publicOrigin(c), result.conversation.id, clientIp(c)),
+  );
   const [conversation] = await toContactConversations(c.env, [result.conversation]);
   return c.json({ conversation, message: result.message }, 201);
 });
@@ -252,8 +260,20 @@ contactRoutes.post("/conversations/:id/messages", async (c) => {
     "text",
     draft,
   );
+  c.executionCtx.waitUntil(
+    runAssistantTurn(c.env, c.executionCtx as ExecutionContext, publicOrigin(c), conversation.id, clientIp(c)),
+  );
   const [updated] = await toContactConversations(c.env, [result.conversation]);
   return c.json({ conversation: updated, message: result.message }, 201);
+});
+
+/** "Talk to a human": the AI assistant stops answering, the team takes it from here. */
+contactRoutes.post("/conversations/:id/handoff", async (c) => {
+  const contact = c.get("contact");
+  await limit(c.env.WRITE_LIMITER, `contact:${contact.id}`);
+  const updated = await handOffToTeam(c.env, c.executionCtx as ExecutionContext, publicOrigin(c), await ownConversation(c));
+  const [conversation] = await toContactConversations(c.env, [updated]);
+  return c.json(conversation);
 });
 
 contactRoutes.post("/conversations/:id/read", async (c) => {

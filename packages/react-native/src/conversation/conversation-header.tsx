@@ -3,6 +3,7 @@ import { replyTimeLabel, type ContactConversation } from "yunidesk";
 import { conversationTitle } from "../logic/conversation-labels";
 import { useMessengerState, useSupportCore } from "../provider/support-context";
 import { TeamAvatars } from "../home/team-avatars";
+import { AssistantAvatar } from "../ui/assistant-avatar";
 import { Avatar } from "../ui/avatar";
 import { ScreenHeader } from "../ui/screen-header";
 
@@ -35,7 +36,9 @@ export function ConversationHeader({ conversation, onBack, onClose, safeTop }: C
         accessibilityRole="header"
         accessibilityLabel={[title, subtitle].filter(Boolean).join(", ")}
       >
-        {agent ? (
+        {agent?.isBot ? (
+          <AssistantAvatar badge={strings.aiBadge} size={36} theme={theme} />
+        ) : agent ? (
           <Avatar agent={agent} size={36} theme={theme} />
         ) : config && config.agents.length > 0 ? (
           <TeamAvatars agents={config.agents} theme={theme} size={28} ringColor={theme.background} />

@@ -14,6 +14,14 @@ export function isContactServerEvent(value: unknown): value is ContactServerEven
       return true;
     case "presence":
       return typeof value.online === "boolean";
+    case "assistant.delta":
+      return isString(value.conversationId) && isString(value.streamId) && isString(value.text);
+    case "assistant.status":
+      return (
+        isString(value.conversationId) &&
+        isString(value.streamId) &&
+        (value.status === "thinking" || value.status === "done" || value.status === "failed")
+      );
     case "message.created":
       return (
         isObject(value.message) &&

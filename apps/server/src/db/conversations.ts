@@ -18,12 +18,13 @@ import { selectIn } from "./rows";
 import { loadAgents, toAgentConversations, toContactConversations, toMessages } from "./serialize";
 
 /** What a contact may see: their and the team's messages, plus the "resolved" marker. Never notes. */
-export const CONTACT_VISIBLE_SQL = `(kind = 'text' OR (kind = 'event' AND json_extract(event, '$.type') = 'resolved'))`;
+export const CONTACT_VISIBLE_SQL = `(kind = 'text' OR (kind = 'event' AND json_extract(event, '$.type') IN ('resolved', 'handed_off')))`;
 
 export function isVisibleToContact(row: Pick<MessageRow, "kind" | "event">): boolean {
   if (row.kind === "text") return true;
   if (row.kind !== "event" || !row.event) return false;
-  return (JSON.parse(row.event) as SystemEvent).type === "resolved";
+  const type = (JSON.parse(row.event) as SystemEvent).type;
+  return type === "resolved" || type === "handed_off";
 }
 
 export type Author =
@@ -150,6 +151,7 @@ async function insertMessage(
   draft: MessageDraft,
   attachments: AttachmentRow[],
   event: SystemEvent | null = null,
+  options: { ai?: boolean } = {},
 ): Promise<{ conversation: ConversationRow; message: Message }> {
   const now = Math.max(Date.now(), conversation.updated_at);
   const id = newId("msg");
@@ -157,8 +159,8 @@ async function insertMessage(
   const agent = author.type === "contact" ? null : author.agent;
   const statements: D1PreparedStatement[] = [
     env.DB.prepare(
-      `INSERT INTO messages (id, conversation_id, author_type, agent_id, kind, body, event, client_id, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO messages (id, conversation_id, author_type, agent_id, kind, body, event, client_id, created_at, ai)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).bind(
       id,
       conversation.id,
@@ -169,6 +171,7 @@ async function insertMessage(
       event ? JSON.stringify(event) : null,
       draft.clientId,
       now,
+      options.ai ? 1 : 0,
     ),
   ];
   if (attachments.length > 0) {
@@ -197,9 +200,18 @@ async function insertMessage(
       statements.push(
         env.DB.prepare(
           `UPDATE conversations SET ${previewSet}, last_agent_message_at = ?, agent_last_read_at = ?,
-             assignee_id = COALESCE(assignee_id, ?)
+             assignee_id = COALESCE(assignee_id, ?),
+             -- A teammate answering takes the conversation over from the AI assistant.
+             ai_state = CASE WHEN ? = 1 AND ai_state = 'active' THEN 'human' ELSE ai_state END
            WHERE id = ?`,
-        ).bind(...previewValues, now, now, agent && agent.kind === "human" ? agent.id : null, conversation.id),
+        ).bind(
+          ...previewValues,
+          now,
+          now,
+          agent && agent.kind === "human" ? agent.id : null,
+          agent && agent.kind === "human" ? 1 : 0,
+          conversation.id,
+        ),
       );
     }
   } else if (kind === "note") {
@@ -241,6 +253,7 @@ async function insertMessage(
     event: event ? JSON.stringify(event) : null,
     client_id: draft.clientId,
     created_at: now,
+    ai: options.ai ? 1 : 0,
   };
   const agents = await loadAgents(env);
   const [message] = await toMessages(env, origin, [row], agents);
@@ -449,5 +462,65 @@ export async function rateConversation(
   const [agentConversation] = await toAgentConversations(env, [updated]);
   if (agentConversation) ctx.waitUntil(notifyAgents(env, { type: "conversation.updated", conversation: agentConversation }));
   ctx.waitUntil(sendWebhook(env, "conversation.rated", { conversationId: updated.id, score, comment }));
+  return updated;
+}
+
+/** A reply written by the AI assistant, as its bot teammate. */
+export async function postAssistantMessage(
+  env: Env,
+  ctx: ExecutionContext,
+  origin: string,
+  conversation: ConversationRow,
+  agent: AgentRow,
+  body: string,
+): Promise<{ conversation: ConversationRow; message: Message }> {
+  return insertMessage(
+    env,
+    ctx,
+    origin,
+    conversation,
+    { type: "agent", agent },
+    "text",
+    { body, attachmentIds: [], clientId: null },
+    [],
+    null,
+    { ai: true },
+  );
+}
+
+/** "Talk to a human": the assistant stops, the team sees a marker and the conversation stays unassigned. */
+export async function handOffToTeam(
+  env: Env,
+  ctx: ExecutionContext,
+  origin: string,
+  conversation: ConversationRow,
+): Promise<ConversationRow> {
+  const changed = await env.DB.prepare(
+    "UPDATE conversations SET ai_state = 'handed_off', ai_lock_until = NULL, status = 'open', updated_at = ? WHERE id = ? AND ai_state = 'active'",
+  )
+    .bind(Date.now(), conversation.id)
+    .run();
+  const current = await getConversation(env, conversation.id);
+  if (!changed.meta.changes) return current;
+  const { conversation: updated } = await insertMessage(
+    env,
+    ctx,
+    origin,
+    current,
+    { type: "system", agent: null },
+    "event",
+    { body: "", attachmentIds: [], clientId: null },
+    [],
+    { type: "handed_off", agentName: null },
+  );
+  ctx.waitUntil(
+    sendWebhook(env, "conversation.updated", {
+      conversationId: updated.id,
+      contactId: updated.contact_id,
+      actor: { type: "contact", id: updated.contact_id },
+      status: updated.status,
+      assigneeId: updated.assignee_id,
+    }),
+  );
   return updated;
 }

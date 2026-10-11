@@ -51,6 +51,8 @@ export interface ConversationRow {
   rating_score: 1 | 2 | 3 | null;
   rating_comment: string | null;
   rating_at: number | null;
+  ai_state: "active" | "handed_off" | "human" | "off" | null;
+  ai_lock_until: number | null;
 }
 
 export interface MessageRow {
@@ -63,6 +65,8 @@ export interface MessageRow {
   event: string | null;
   client_id: string | null;
   created_at: number;
+  /** 1 when the AI assistant wrote it. */
+  ai: number;
 }
 
 export interface AttachmentRow {

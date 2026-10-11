@@ -99,10 +99,31 @@ The signature is HMAC-SHA256 of `"<t>.<raw body>"`. Deliveries more than 5 minut
 - Endpoints must be public https URLs: no IP addresses, no localhost, no `*.workers.dev`.
 - The delivery log (last 50 per endpoint in the dashboard) is kept 30 days. Erasing a contact also erases their deliveries.
 
+## AI assistant
+
+An assistant can answer customers first, from your knowledge and your tools, before the team does. Configure it in **Settings → Assistant** or with a key that has `assistant:write` (`yunidesk.assistant.*` in `yunidesk/api`).
+
+- **Model:** any OpenRouter model, `z-ai/glm-5.3-flash` by default. Set your OpenRouter key from your server or the dashboard. It is checked with OpenRouter, stored encrypted and never returned. **Never put it in a website or an app**, and give it a credit limit at openrouter.ai.
+- **Knowledge:** FAQ entries and articles. For each question, the best matches (full-text search) are given to the model. Everything you add can be quoted to any customer, so never put secrets in it.
+- **Tools:** a name, a description, a JSON schema and an https URL on your server. Yunidesk POSTs `{ id, tool, arguments, conversationId, contact, createdAt }`, signed like webhooks with the tools' secret (`POST /assistant/tools/roll-secret`, verify with `verifyWebhookSignature`). `contact.externalId` is your user id when the customer was identified with a signed token. Trust it only when `contact.isIdentified` is true. Answer JSON within 8 seconds.
+- **In the messenger:** replies stream in live. Every AI message is labelled and has a **Talk to a human** button, which hands the conversation to the team (it shows as a marker on both sides). A teammate's reply also takes over.
+- **Limits:**
+  - 6 replies a minute per customer, and per IP for anonymous visitors.
+  - 40 replies a day per customer.
+  - At most 4 model steps, 700 output tokens and 45 seconds per reply.
+  - A daily budget in USD.
+  - Anything that stops the assistant (a limit, the budget, an error) hands the conversation to the team instead of leaving the customer waiting.
+- **Rules it always follows**, whatever your instructions say:
+  - it says it is an AI;
+  - it answers only from your knowledge and tools;
+  - it says when it doesn't know and points to a person;
+  - it treats customer text and tool results as data, not instructions.
+
 ## How secrets are stored
 
 | Secret | Stored as |
 |---|---|
 | API keys | SHA-256 hash only; shown once |
+| OpenRouter key, tool-signing secret | AES-256-GCM like webhook secrets; never returned |
 | Webhook endpoint secrets | AES-256-GCM, with a key derived from `SESSION_SECRET` (HKDF, one key per purpose) and bound to the endpoint's id. Rotating `SESSION_SECRET` makes them unreadable: roll every endpoint's secret afterwards |
 | Teammate passwords | PBKDF2-SHA256 |

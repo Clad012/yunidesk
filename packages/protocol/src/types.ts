@@ -46,7 +46,9 @@ export type SystemEvent =
   | { type: "resolved"; agentName: string | null }
   | { type: "reopened"; agentName: string | null }
   | { type: "snoozed"; agentName: string | null; until: number }
-  | { type: "assigned"; agentName: string | null; assigneeName: string | null };
+  | { type: "assigned"; agentName: string | null; assigneeName: string | null }
+  /** The customer asked for a person: the AI assistant stops answering this conversation. */
+  | { type: "handed_off"; agentName: null };
 
 export interface Message {
   id: string;
@@ -61,6 +63,8 @@ export interface Message {
   /** Echo of the id the sender generated, used to reconcile optimistic messages. */
   clientId: string | null;
   createdAt: number;
+  /** Written by the AI assistant: always shown as such, with a way to reach a person. */
+  ai?: boolean;
 }
 
 export interface MessagePreview {
@@ -91,6 +95,8 @@ export interface ContactConversation {
   /** Teammates who replied, most recent first. */
   participants: PublicAgent[];
   rating: Rating | null;
+  /** The AI assistant answers it (false once the customer asked for a person, or it has no assistant). */
+  aiActive?: boolean;
 }
 
 export interface ContactProfile {
@@ -133,6 +139,8 @@ export interface AgentConversation {
   agentLastReadAt: number | null;
   snoozedUntil: number | null;
   rating: Rating | null;
+  /** The AI assistant answers it (false once the customer asked for a person, or it has no assistant). */
+  aiActive?: boolean;
 }
 
 export interface WidgetSettings {
@@ -150,6 +158,8 @@ export interface WidgetSettings {
 export interface WidgetConfig extends WidgetSettings {
   agents: PublicAgent[];
   online: boolean;
+  /** Present when an AI assistant answers this visitor first. */
+  assistant?: { name: string } | null;
 }
 
 export interface AdminSettings extends WidgetSettings {
@@ -191,6 +201,10 @@ export interface Page<T> {
 
 export type ContactServerEvent =
   | { type: "ready" }
+  /** The assistant's reply as it is written (the whole text so far); the final message follows as message.created. */
+  | { type: "assistant.delta"; conversationId: string; streamId: string; text: string }
+  /** The assistant started, finished or gave up on a reply. */
+  | { type: "assistant.status"; conversationId: string; streamId: string; status: "thinking" | "done" | "failed" }
   | { type: "message.created"; message: Message; conversation: ContactConversation }
   | { type: "conversation.updated"; conversation: ContactConversation }
   | { type: "conversation.read"; conversationId: string; at: number }
@@ -251,8 +265,15 @@ export interface ApiErrorBody {
  * - conversations:write reply, add notes, upload attachments, assign, snooze, resolve
  * - contacts:read       list and read contacts
  * - webhooks:write      manage the webhook endpoints this key created
+ * - assistant:write     configure the AI assistant: settings, OpenRouter key, knowledge, tools
  */
-export const API_SCOPES = ["conversations:read", "conversations:write", "contacts:read", "webhooks:write"] as const;
+export const API_SCOPES = [
+  "conversations:read",
+  "conversations:write",
+  "contacts:read",
+  "webhooks:write",
+  "assistant:write",
+] as const;
 export type ApiScope = (typeof API_SCOPES)[number];
 
 export interface ApiKey {
@@ -306,4 +327,82 @@ export interface WebhookDelivery {
   lastError: string | null;
   createdAt: number;
   completedAt: number | null;
+}
+
+// ---- AI assistant ----
+
+export interface AssistantSettings {
+  enabled: boolean;
+  /** Shown on its messages ("Yuniqa assistant"). */
+  name: string;
+  /** How it should answer: tone, scope, what to never do. */
+  instructions: string;
+  /** OpenRouter model id. */
+  model: string;
+  /** Whether anonymous visitors (not signed in to your app) get the assistant. */
+  allowAnonymous: boolean;
+  /** Daily spend limit in USD; past it, conversations go straight to the team. */
+  dailyBudgetUsd: number;
+  hasOpenRouterKey: boolean;
+}
+
+export type AssistantSettingsPatch = Partial<Omit<AssistantSettings, "hasOpenRouterKey">>;
+
+export interface KnowledgeItem {
+  id: string;
+  /** `faq`: a question and its answer. `article`: a longer how-to. */
+  kind: "faq" | "article";
+  title: string;
+  body: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface KnowledgeInput {
+  kind: "faq" | "article";
+  title: string;
+  body: string;
+}
+
+/**
+ * A tool the assistant may call: Yunidesk POSTs the arguments to `url`, signed like webhooks
+ * (X-Yunidesk-Signature), with the customer it is helping; your server answers with JSON.
+ */
+export interface AssistantTool {
+  id: string;
+  /** snake_case, what the model calls. */
+  name: string;
+  description: string;
+  /** JSON schema of the arguments (type "object"). */
+  inputSchema: Record<string, unknown>;
+  url: string;
+  enabled: boolean;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface AssistantToolInput {
+  name: string;
+  description: string;
+  inputSchema: Record<string, unknown>;
+  url: string;
+  enabled?: boolean;
+}
+
+/** The body Yunidesk POSTs to a tool's URL. */
+export interface AssistantToolCall {
+  id: string;
+  tool: string;
+  arguments: Record<string, unknown>;
+  conversationId: string;
+  contact: { id: string; externalId: string | null; email: string | null; name: string | null; isIdentified: boolean };
+  createdAt: number;
+}
+
+export interface AssistantUsage {
+  /** UTC day, YYYY-MM-DD. */
+  day: string;
+  replies: number;
+  costUsd: number;
+  budgetUsd: number;
 }
