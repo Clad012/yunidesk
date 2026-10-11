@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { verifyWebhookSignature } from "yunidesk/webhooks";
 import { fitBudget, type KnowledgeRow } from "../src/lib/assistant/knowledge";
-import { buildSystemPrompt, reasoningFor } from "../src/lib/assistant/prompt";
+import { buildSystemPrompt, reasoningFor, toPlainText } from "../src/lib/assistant/prompt";
 import { callTool } from "../src/lib/assistant/tools";
 import { requiredScope } from "../src/lib/api-keys";
 
@@ -89,5 +89,14 @@ describe("assistant settings through API keys", () => {
     expect(requiredScope("POST", "/assistant/knowledge")).toBe("assistant:write");
     expect(requiredScope("POST", "/assistant/tools/roll-secret")).toBe("assistant:write");
     expect(requiredScope("GET", "/assistant/openrouter-key")).toBeUndefined();
+  });
+});
+
+describe("assistant replies as plain text", () => {
+  it("drops Markdown markers but keeps the words, lists and links", () => {
+    expect(toPlainText("Open the **Agents** tab, then *Routines*.")).toBe("Open the Agents tab, then Routines.");
+    expect(toPlainText("## Steps\n- one\n- two\n1. three")).toBe("Steps\n• one\n• two\n1. three");
+    expect(toPlainText("Run `pnpm dev` at https://example.com/a_b_c")).toBe("Run pnpm dev at https://example.com/a_b_c");
+    expect(toPlainText("3 * 4 = 12")).toBe("3 * 4 = 12");
   });
 });

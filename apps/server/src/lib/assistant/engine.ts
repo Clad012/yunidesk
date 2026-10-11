@@ -7,7 +7,7 @@ import type { AgentRow, ContactRow, MessageRow } from "../../db/rows";
 import { notifyContact } from "../realtime";
 import { getSettings } from "../settings";
 import { searchKnowledge, type KnowledgeRow } from "./knowledge";
-import { buildSystemPrompt, reasoningFor } from "./prompt";
+import { buildSystemPrompt, reasoningFor, toPlainText } from "./prompt";
 import { getAssistant, isAssistantReady, openOpenRouterKey, openToolSecret, saveAssistant, type StoredAssistant } from "./settings";
 import { buildTools, type AssistantToolRow, type ToolCallRecord } from "./tools";
 import { recordUsage, spentToday } from "./usage";
@@ -75,7 +75,7 @@ export async function generateReply(input: {
   let text = "";
   for await (const part of result.textStream) {
     text += part;
-    input.onText?.(text);
+    input.onText?.(toPlainText(text));
   }
   // Each step (one per tool round) is billed: add them all up.
   const steps = await result.steps;
@@ -84,7 +84,7 @@ export async function generateReply(input: {
     return sum + (typeof usage?.cost === "number" ? usage.cost : 0);
   }, 0);
   return {
-    text: text.trim(),
+    text: toPlainText(text).trim(),
     sources: knowledge.map((row: KnowledgeRow) => ({ id: row.id, title: row.title })),
     toolCalls,
     costUsd,
