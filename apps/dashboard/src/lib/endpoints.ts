@@ -23,6 +23,9 @@ import type {
   Message,
   Page,
   PublicAgent,
+  PushPreferences,
+  PushSettings,
+  PushSubscriptionInput,
   WebhookDelivery,
   WebhookEndpoint,
   WebhookEndpointWithSecret,
@@ -94,6 +97,8 @@ export const queryKeys = {
   knowledgeLists: ["assistant", "knowledge"] as const,
   knowledge: (q: string) => ["assistant", "knowledge", q] as const,
   assistantTools: ["assistant", "tools"] as const,
+  pushSettings: ["push", "settings"] as const,
+  pushPublicKey: ["push", "public-key"] as const,
 };
 
 const enc = encodeURIComponent;
@@ -195,4 +200,12 @@ export const endpoints = {
     api<AssistantTool>(`/api/agent/assistant/tools/${enc(id)}`, { method: "PATCH", body: { ...body } }),
   deleteAssistantTool: (id: string) => api<{ ok: true }>(`/api/agent/assistant/tools/${enc(id)}`, { method: "DELETE" }),
   rollAssistantToolSecret: () => api<{ secret: string }>("/api/agent/assistant/tools/roll-secret", { method: "POST" }),
+
+  pushPublicKey: () => api<{ publicKey: string }>("/api/agent/push/public-key"),
+  pushSettings: () => api<PushSettings>("/api/agent/push/preferences"),
+  savePushPreferences: (body: Partial<PushPreferences>) => api<PushSettings>("/api/agent/push/preferences", { method: "PUT", body: { ...body } }),
+  pushSubscribe: (body: PushSubscriptionInput) => api<PushSettings>("/api/agent/push/subscriptions", { body: { ...body } }),
+  pushUnsubscribe: (endpoint: string) => api<PushSettings>("/api/agent/push/subscriptions", { method: "DELETE", body: { endpoint } }),
+  pushTest: (endpoint: string) =>
+    api<{ outcome: "delivered" | "gone" | "failed"; status: number | null }>("/api/agent/push/test", { body: { endpoint } }),
 };

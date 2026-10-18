@@ -4,6 +4,7 @@ import { KeyboardIcon, LogOutIcon, MonitorIcon, MoonIcon, SunIcon, UserRoundIcon
 import { copy } from "@/lib/copy";
 import { endpoints } from "@/lib/endpoints";
 import { realtime } from "@/lib/realtime/socket";
+import { turnOffPush } from "@/features/push/push-device";
 import { useBootstrap } from "@/hooks/use-bootstrap";
 import { setThemePreference, useTheme, type ThemePreference } from "@/hooks/use-theme";
 import { PersonAvatar } from "@/components/person-avatar";
@@ -27,6 +28,8 @@ export function ProfileMenu() {
   const queryClient = useQueryClient();
 
   const logout = async () => {
+    // A signed-out browser must not keep receiving the team's notifications.
+    await turnOffPush().catch(() => undefined);
     await endpoints.logout().catch(() => undefined);
     realtime.stop();
     queryClient.clear();
