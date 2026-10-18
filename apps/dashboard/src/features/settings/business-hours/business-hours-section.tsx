@@ -15,7 +15,7 @@ const KEYS = ["businessHours", "awayMessage"] as const;
 
 export function BusinessHoursSection() {
   const form = useSettingsForm(KEYS);
-  const { value, isOwner } = form;
+  const { value, canEdit: isOwner } = form;
   const hours = value.businessHours;
   const disabled = !isOwner;
   const problem = businessHoursProblem(hours);

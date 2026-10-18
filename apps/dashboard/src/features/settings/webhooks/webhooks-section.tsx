@@ -1,5 +1,6 @@
 import { CheckCircle2Icon } from "lucide-react";
 import { copy } from "@/lib/copy";
+import { useCan } from "@/hooks/use-bootstrap";
 import { Field } from "@/components/field";
 import { Input } from "@/components/ui/input";
 import { CodeBlock } from "../code-block";
@@ -23,20 +24,21 @@ const { event, data } = payload;`;
 
 export function WebhooksSection() {
   const form = useSettingsForm(["webhookUrl"] as const);
+  const canManageEndpoints = useCan("webhooks.manage");
   const url = form.value.webhookUrl ?? "";
   const invalid = url !== "" && !validHttpsUrl(url);
   return (
-    <SettingsPage title={copy.webhooks.title} subtitle={copy.webhooks.subtitle} ownerOnly={!form.isOwner}>
-      {form.isOwner ? <EndpointsCard /> : null}
+    <SettingsPage title={copy.webhooks.title} subtitle={copy.webhooks.subtitle} ownerOnly={!form.canEdit}>
+      {canManageEndpoints ? <EndpointsCard /> : null}
       <SettingsCard title={copy.webhooks.defaultTitle} description={copy.webhooks.defaultHint}>
         <Field label={copy.webhooks.url} hint={copy.webhooks.urlHint} error={invalid ? copy.webhooks.urlHint : null}>
           {(id) => (
-            <Input id={id} type="url" value={url} placeholder={copy.webhooks.urlPlaceholder} disabled={!form.isOwner} onChange={(e) => form.set("webhookUrl", e.target.value.trim() || null)} className="font-mono text-xs" />
+            <Input id={id} type="url" value={url} placeholder={copy.webhooks.urlPlaceholder} disabled={!form.canEdit} onChange={(e) => form.set("webhookUrl", e.target.value.trim() || null)} className="font-mono text-xs" />
           )}
         </Field>
         <div className="flex flex-col gap-2">
           <p className="text-sm font-medium">{copy.webhooks.secret}</p>
-          <WebhookSecret hasSecret={form.value.hasWebhookSecret} disabled={!form.isOwner} />
+          <WebhookSecret hasSecret={form.value.hasWebhookSecret} disabled={!form.canEdit} />
         </div>
       </SettingsCard>
       <SettingsCard title={copy.webhooks.events}>

@@ -11,6 +11,7 @@ const DAY_MS = 24 * 3600 * 1000;
  * - resolved conversations untouched for `retentionDays`, with their files
  * - anonymous visitors who never wrote, after 30 days
  * - expired agent sessions and invites
+ * - audit log entries older than `auditRetentionDays` (at least 30)
  */
 export async function runRetention(env: Env): Promise<Record<string, number>> {
   const now = Date.now();
@@ -66,6 +67,10 @@ export async function runRetention(env: Env): Promise<Record<string, number>> {
     .bind(now - DELIVERY_RETENTION_MS)
     .run();
 
+  const auditEntries = await env.DB.prepare("DELETE FROM audit_log WHERE created_at < ?")
+    .bind(now - Math.max(30, settings.auditRetentionDays) * DAY_MS)
+    .run();
+
   await env.DB.batch([
     env.DB.prepare("DELETE FROM agent_sessions WHERE expires_at < ?").bind(now),
     env.DB.prepare("DELETE FROM agent_invites WHERE expires_at < ? AND accepted_at IS NULL").bind(now),
@@ -76,5 +81,6 @@ export async function runRetention(env: Env): Promise<Record<string, number>> {
     conversations: expired.results.length,
     visitors: visitors.meta.changes ?? 0,
     webhookDeliveries: deliveries.meta.changes ?? 0,
+    auditEntries: auditEntries.meta.changes ?? 0,
   };
 }

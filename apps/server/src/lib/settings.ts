@@ -9,6 +9,7 @@ export interface StoredSettings extends WidgetSettings {
   businessHours: BusinessHours;
   awayMessage: LocalizedText;
   helpCenter: HelpCenterSettings;
+  auditRetentionDays: number;
 }
 
 export const DEFAULT_SETTINGS: StoredSettings = {
@@ -27,6 +28,7 @@ export const DEFAULT_SETTINGS: StoredSettings = {
   businessHours: DEFAULT_BUSINESS_HOURS,
   awayMessage: {},
   helpCenter: { enabled: false, title: {}, description: {} },
+  auditRetentionDays: 365,
 };
 
 const KEY = "workspace";

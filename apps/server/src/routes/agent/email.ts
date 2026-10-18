@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { z } from "zod";
 import { limit, readBody, type AppEnv } from "../../app-env";
-import { requireOwner } from "../../lib/agent-session";
+import { requirePermission } from "../../lib/permissions";
 import { badRequest } from "../../lib/errors";
 import { normalizeAddress } from "../../lib/email-channel/addresses";
 import { sendTestEmail } from "../../lib/email-channel/outbound";
@@ -28,7 +28,7 @@ export const emailRoutes = new Hono<AppEnv>();
 emailRoutes.get("/", async (c) => c.json(await toEmailChannelSettings(c.env, await getEmailChannel(c.env))));
 
 emailRoutes.patch("/", async (c) => {
-  requireOwner(c.get("agent"));
+  requirePermission(c, "settings.manage");
   const input = await readBody(c, patchSchema);
   if (input.inboundAddress !== undefined && normalizeAddress(c.env.EMAIL_INBOUND_ADDRESS)) {
     throw badRequest("The inbound address is set by EMAIL_INBOUND_ADDRESS on the server");
@@ -45,7 +45,7 @@ emailRoutes.patch("/", async (c) => {
 /** Sends a test reply to the owner's own address, through the configured provider. */
 emailRoutes.post("/test", async (c) => {
   const agent = c.get("agent");
-  requireOwner(agent);
+  requirePermission(c, "settings.manage");
   await limit(c.env.WRITE_LIMITER, `email-test:${agent.id}`);
   return c.json(await sendTestEmail(c.env, agent.email));
 });

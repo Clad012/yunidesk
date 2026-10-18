@@ -19,7 +19,7 @@ const OFF: HelpCenterSettings = { enabled: false, title: {}, description: {} };
 export function HelpCenterCard() {
   const form = useSettingsForm(KEYS);
   const settings = form.value.helpCenter ?? OFF;
-  const disabled = !form.isOwner;
+  const disabled = !form.canEdit;
   const [lang, setLang] = useState<Locale>("en");
   const url = helpCenterBaseUrl();
   const set = (patch: Partial<HelpCenterSettings>) => form.set("helpCenter", { ...settings, ...patch });

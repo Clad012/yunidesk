@@ -3,7 +3,7 @@ import type { EmailChannelSettings } from "yunidesk";
 import { copy } from "@/lib/copy";
 import { errorMessage } from "@/lib/api";
 import { endpoints, queryKeys } from "@/lib/endpoints";
-import { useIsOwner } from "@/hooks/use-bootstrap";
+import { useCan } from "@/hooks/use-bootstrap";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { SaveBar, SettingsPage } from "../settings-page";
@@ -13,7 +13,7 @@ import { EmailStatusCard } from "./email-status-card";
 import { useEmailForm } from "./use-email-form";
 
 export function EmailSection() {
-  const isOwner = useIsOwner();
+  const isOwner = useCan("settings.manage");
   const settings = useQuery({ queryKey: queryKeys.emailChannel, queryFn: endpoints.emailChannel });
   return (
     <SettingsPage title={copy.emailChannel.title} subtitle={copy.emailChannel.subtitle} ownerOnly={!isOwner}>

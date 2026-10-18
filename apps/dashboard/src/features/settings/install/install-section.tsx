@@ -15,8 +15,8 @@ export function InstallSection() {
         <p className="text-xs text-muted-foreground">{copy.install.loaderNote}</p>
       </SettingsCard>
       <SettingsCard title={copy.install.origins} description={copy.install.originsHint}>
-        <OriginsEditor origins={form.value.allowedOrigins} disabled={!form.isOwner} onChange={(next) => form.set("allowedOrigins", next)} />
-        {!form.isOwner ? <p className="text-xs text-muted-foreground">{copy.common.ownerOnly}</p> : null}
+        <OriginsEditor origins={form.value.allowedOrigins} disabled={!form.canEdit} onChange={(next) => form.set("allowedOrigins", next)} />
+        {!form.canEdit ? <p className="text-xs text-muted-foreground">{copy.common.ownerOnly}</p> : null}
       </SettingsCard>
       <SettingsCard title={copy.install.identity} description={copy.install.identityHint}>
         <CodeBlock code={identitySnippet} label={copy.install.identityServer} />

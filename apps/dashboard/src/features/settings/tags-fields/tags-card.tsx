@@ -3,7 +3,7 @@ import { useState } from "react";
 import type { TagWithUsage } from "yunidesk";
 import { copy, fmt } from "@/lib/copy";
 import { errorMessage } from "@/lib/api";
-import { useIsOwner } from "@/hooks/use-bootstrap";
+import { useCan } from "@/hooks/use-bootstrap";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { TagChip } from "@/features/tags/tag-chip";
@@ -17,7 +17,7 @@ const usage = (tag: TagWithUsage) =>
   fmt(tag.conversationCount === 1 ? copy.tagsFields.usageOne : copy.tagsFields.usage, { n: tag.conversationCount, open: tag.openCount });
 
 export function TagsCard() {
-  const owner = useIsOwner();
+  const owner = useCan("settings.manage");
   const tags = useTags();
   const { create, update, remove } = useTagMutations();
   const [editing, setEditing] = useState<TagWithUsage | "new" | null>(null);

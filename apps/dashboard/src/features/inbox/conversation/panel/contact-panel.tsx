@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import type { AgentConversation } from "yunidesk";
 import { copy } from "@/lib/copy";
 import { cn } from "@/lib/utils";
+import { useCan } from "@/hooks/use-bootstrap";
 import { Skeleton } from "@/components/ui/skeleton";
 import { BlurFade } from "@/components/magicui/blur-fade";
 import { ContactActions } from "@/features/contacts/contact-actions";
@@ -37,6 +38,7 @@ export function ContactPanel({ conversation, actions, overlay, onClose }: Contac
   const detail = useContactDetail(conversation.contact.id);
   const contact = detail.data?.contact ?? conversation.contact;
   const others = (detail.data?.conversations ?? []).filter((c) => c.id !== conversation.id);
+  const editable = useCan("inbox.update");
 
   return (
     <aside
@@ -65,10 +67,10 @@ export function ContactPanel({ conversation, actions, overlay, onClose }: Contac
           <ContactDetails contact={contact} />
         </div>
         <Section title={copy.tags.title}>
-          <ConversationTags conversation={conversation} />
+          <ConversationTags conversation={conversation} editable={editable} />
         </Section>
         <Section title={copy.fields.title}>
-          <ConversationFields conversation={conversation} onSave={actions.setField} />
+          <ConversationFields conversation={conversation} onSave={actions.setField} editable={editable} />
         </Section>
         <Section title={copy.contactPanel.otherConversations}>
           {detail.isPending ? <Skeleton className="h-8 w-full" /> : <ConversationLinkList conversations={others} empty={copy.contactPanel.noOtherConversations} />}

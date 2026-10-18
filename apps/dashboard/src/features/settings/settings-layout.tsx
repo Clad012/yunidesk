@@ -1,9 +1,12 @@
 import { Link, Outlet } from "@tanstack/react-router";
-import { BotIcon, BracesIcon, Clock3Icon, CodeIcon, KeyRoundIcon, MailIcon, MessageCircleIcon, MessageSquareTextIcon, ShieldCheckIcon, TagsIcon, UserRoundIcon, UsersIcon, type LucideIcon } from "lucide-react";
+import { BotIcon, BracesIcon, Clock3Icon, CodeIcon, KeyRoundIcon, LogInIcon, MailIcon, MessageCircleIcon, MessageSquareTextIcon, ScrollTextIcon, ShieldCheckIcon, TagsIcon, UserRoundIcon, UsersIcon, type LucideIcon } from "lucide-react";
+import { can, type Permission } from "yunidesk";
+import { useBootstrap } from "@/hooks/use-bootstrap";
 import { copy } from "@/lib/copy";
 import type { SettingsSection } from "./section-names";
 
-const GROUPS: { title: string; items: { section: SettingsSection; label: string; icon: LucideIcon }[] }[] = [
+/** `permission`: the item only shows for roles that have it. */
+const GROUPS: { title: string; items: { section: SettingsSection; label: string; icon: LucideIcon; permission?: Permission }[] }[] = [
   {
     title: copy.settings.workspace,
     items: [
@@ -18,12 +21,15 @@ const GROUPS: { title: string; items: { section: SettingsSection; label: string;
       { section: "webhooks", label: copy.settings.sections.webhooks, icon: BracesIcon },
       { section: "api-keys", label: copy.settings.sections.apiKeys, icon: KeyRoundIcon },
       { section: "privacy", label: copy.settings.sections.privacy, icon: ShieldCheckIcon },
+      { section: "security", label: copy.settings.sections.security, icon: LogInIcon, permission: "sso.manage" },
+      { section: "audit-log", label: copy.settings.sections.auditLog, icon: ScrollTextIcon, permission: "auditLog.read" },
     ],
   },
   { title: copy.settings.personal, items: [{ section: "profile", label: copy.settings.sections.profile, icon: UserRoundIcon }] },
 ];
 
 export function SettingsLayout() {
+  const { role } = useBootstrap().agent;
   return (
     <div className="flex h-full min-h-0">
       <aside className="hidden w-52 shrink-0 flex-col gap-5 py-3 pr-2 md:flex xl:w-56">
@@ -31,7 +37,7 @@ export function SettingsLayout() {
         {GROUPS.map((group) => (
           <nav key={group.title} className="flex flex-col gap-0.5">
             <p className="px-2.5 pb-1 text-xs font-medium text-muted-foreground">{group.title}</p>
-            {group.items.map(({ section, label, icon: Icon }) => (
+            {group.items.filter((item) => !item.permission || can(role, item.permission)).map(({ section, label, icon: Icon }) => (
               <Link
                 key={section}
                 to="/settings/$section"

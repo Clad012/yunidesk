@@ -1,4 +1,4 @@
-import { API_SCOPES, CONVERSATION_FIELD_TYPES, CONVERSATION_PRIORITIES, TAG_COLORS } from "yunidesk";
+import { API_SCOPES, AUDIT_ACTIONS, CONVERSATION_FIELD_TYPES, CONVERSATION_PRIORITIES, TAG_COLORS } from "yunidesk";
 import { WEBHOOK_EVENT_NAMES } from "yunidesk/webhooks";
 
 /** OpenAPI 3.1 description of what an API key can call, plus the webhook payloads. Served at /api/openapi.json. */
@@ -42,6 +42,13 @@ const knowledgeInputProperties = {
   position: { type: "integer", description: "Order inside its category, lowest first" },
   translationOf: nullable({ type: "string", description: "Id of the item this one translates (both need a language); null unlinks" }),
 };
+/** Dashboard routes: cookie session only, API keys are refused. */
+const sessionOp = (operationId: string, summary: string, rest: object) => ({ operationId, summary, security: [{ session: [] }], ...rest });
+const auditFilters = (extra: object[]) => [
+  ...extra,
+  { name: "action", in: "query", schema: { type: "string" }, description: "One action (team.role_changed) or a group (team)" },
+  { name: "actor", in: "query", schema: { type: "string" }, description: "An agent or API key id" },
+];
 
 const conversationPatch = {
   type: "object",
@@ -132,6 +139,7 @@ export const openApiDocument = {
   components: {
     securitySchemes: {
       apiKey: { type: "http", scheme: "bearer", bearerFormat: "ydk_<39 chars>", description: `Scopes: ${API_SCOPES.join(", ")}` },
+      session: { type: "apiKey", in: "cookie", name: "__Host-ys_session", description: "Dashboard session; these routes refuse API keys" },
     },
     responses: {
       Error: {
@@ -325,6 +333,35 @@ export const openApiDocument = {
             },
           },
           holidays: { type: "array", maxItems: 100, items: { type: "string", format: "date" }, description: "Closed all day, in `timezone`" },
+        },
+      },
+      AuditEntry: {
+        type: "object",
+        properties: {
+          id: id("aud"),
+          actor: {
+            type: "object",
+            properties: { type: { enum: ["agent", "api_key", "system"] }, id: nullable({ type: "string" }), name: nullable({ type: "string" }) },
+          },
+          action: { enum: [...AUDIT_ACTIONS] },
+          target: nullable({ type: "object", properties: { type: { type: "string" }, id: nullable({ type: "string" }) } }),
+          details: { type: "object", additionalProperties: true, description: "Changed keys, old and new roles, failure reasons; never secrets" },
+          ip: nullable({ type: "string" }),
+          userAgent: nullable({ type: "string" }),
+          createdAt: ms,
+        },
+      },
+      SsoSettings: {
+        type: "object",
+        properties: {
+          enabled: { type: "boolean" },
+          issuer: { type: "string" },
+          clientId: { type: "string" },
+          hasClientSecret: { type: "boolean", description: "The secret itself is never returned" },
+          allowedDomains: { type: "array", items: { type: "string" } },
+          requireSso: { type: "boolean", description: "Everyone except owners signs in with SSO" },
+          createRole: nullable({ enum: ["agent", "viewer"] }),
+          callbackUrl: { type: "string" },
         },
       },
       WebhookDelivery: {
@@ -573,6 +610,61 @@ export const openApiDocument = {
         parameters: [pathId("endpointId", "whe")],
         responses: { "200": ok({ type: "object", properties: { items: { type: "array", items: ref("WebhookDelivery") } } }), ...errors },
       }),
+    },
+    // ---- Session only (dashboard): audit log and single sign-on ----
+    "/audit-log": {
+      get: sessionOp("listAuditLog", "Audit log, newest first (owners and admins)", {
+        parameters: auditFilters([{ name: "cursor", in: "query", schema: { type: "string" } }]),
+        responses: { "200": ok(page("AuditEntry")), ...errors },
+      }),
+    },
+    "/audit-log/export": {
+      get: sessionOp("exportAuditLog", "The newest 10,000 matching entries as CSV (owners and admins)", {
+        parameters: auditFilters([]),
+        responses: { "200": { description: "CSV", content: { "text/csv": { schema: { type: "string" } } } }, ...errors },
+      }),
+    },
+    "/sso": {
+      get: sessionOp("getSso", "Single sign-on settings (owners)", { responses: { "200": ok(ref("SsoSettings")), ...errors } }),
+      put: sessionOp("updateSso", "Change single sign-on settings (owners); clientSecret is write-only", {
+        requestBody: {
+          content: json({
+            type: "object",
+            properties: {
+              enabled: { type: "boolean" },
+              issuer: { type: "string" },
+              clientId: { type: "string" },
+              clientSecret: nullable({ type: "string" }),
+              allowedDomains: { type: "array", items: { type: "string" } },
+              requireSso: { type: "boolean" },
+              createRole: nullable({ enum: ["agent", "viewer"] }),
+            },
+          }),
+        },
+        responses: { "200": ok(ref("SsoSettings")), ...errors },
+      }),
+    },
+    "/sso/test": {
+      post: sessionOp("testSso", "Fetch the provider's discovery document (owners)", {
+        requestBody: { content: json({ type: "object", properties: { issuer: { type: "string" } } }) },
+        responses: { "200": ok({ type: "object" }), ...errors },
+      }),
+    },
+    "/auth/sso/start": {
+      get: {
+        operationId: "ssoStart",
+        summary: "Browser sign-in: redirects to the identity provider (authorization code + PKCE)",
+        security: [],
+        responses: { "302": { description: "To the provider, or to /login?sso_error=<code>" } },
+      },
+    },
+    "/auth/sso/callback": {
+      get: {
+        operationId: "ssoCallback",
+        summary: "The provider's redirect URI: verifies the ID token and starts a session",
+        security: [],
+        responses: { "302": { description: "To the dashboard, or to /login?sso_error=<code>" } },
+      },
     },
   },
   webhooks: {

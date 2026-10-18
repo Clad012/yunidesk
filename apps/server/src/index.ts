@@ -8,6 +8,7 @@ import { retryDueDeliveries } from "./lib/webhooks";
 import { ApiError } from "./lib/errors";
 import { embedOrigins } from "./lib/settings";
 import { agentAuthRoutes } from "./routes/agent-auth";
+import { agentSsoRoutes } from "./routes/agent-sso";
 import { agentRoutes } from "./routes/agent";
 import { contactRoutes } from "./routes/contact";
 import { fileRoutes } from "./routes/files";
@@ -80,6 +81,8 @@ app.get("/api/openapi.json", (c) => {
   return c.json(openApiDocument);
 });
 app.route("/api/v1", contactRoutes);
+// Before the other auth routes: the provider redirects here cross-site, so no Origin check applies.
+app.route("/api/agent/auth/sso", agentSsoRoutes);
 app.route("/api/agent/auth", agentAuthRoutes);
 app.route("/api/agent", agentRoutes);
 app.route("/api", fileRoutes);

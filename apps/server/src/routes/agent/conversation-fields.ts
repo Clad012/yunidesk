@@ -3,7 +3,7 @@ import { z } from "zod";
 import { CONVERSATION_FIELD_TYPES } from "yunidesk";
 import { readBody, type AppEnv } from "../../app-env";
 import type { ConversationFieldRow } from "../../db/rows";
-import { requireOwner } from "../../lib/agent-session";
+import { requirePermission } from "../../lib/permissions";
 import {
   FIELD_KEY_PATTERN,
   MAX_FIELDS,
@@ -39,7 +39,7 @@ export const conversationFieldRoutes = new Hono<AppEnv>();
 conversationFieldRoutes.get("/", async (c) => c.json({ items: (await listFields(c.env.DB)).map(toConversationField) }));
 
 conversationFieldRoutes.post("/", async (c) => {
-  requireOwner(c.get("agent"));
+  requirePermission(c, "settings.manage");
   const input = await readBody(c, createSchema);
   const options = input.type === "select" ? (input.options ?? []) : [];
   if (input.type === "select" && options.length === 0) throw badRequest("A select field needs at least one option");
@@ -68,7 +68,7 @@ conversationFieldRoutes.post("/", async (c) => {
 });
 
 conversationFieldRoutes.post("/reorder", async (c) => {
-  requireOwner(c.get("agent"));
+  requirePermission(c, "settings.manage");
   const { ids } = await readBody(c, reorderSchema);
   const existing = await listFields(c.env.DB);
   const known = new Set(existing.map((f) => f.id));
@@ -82,7 +82,7 @@ conversationFieldRoutes.post("/reorder", async (c) => {
 });
 
 conversationFieldRoutes.patch("/:id", async (c) => {
-  requireOwner(c.get("agent"));
+  requirePermission(c, "settings.manage");
   const input = await readBody(c, patchSchema);
   const row = await c.env.DB.prepare("SELECT * FROM conversation_fields WHERE id = ?").bind(c.req.param("id")).first<ConversationFieldRow>();
   if (!row) throw notFound("Field not found");
@@ -98,7 +98,7 @@ conversationFieldRoutes.patch("/:id", async (c) => {
 });
 
 conversationFieldRoutes.delete("/:id", async (c) => {
-  requireOwner(c.get("agent"));
+  requirePermission(c, "settings.manage");
   const row = await c.env.DB.prepare("SELECT * FROM conversation_fields WHERE id = ?").bind(c.req.param("id")).first<ConversationFieldRow>();
   if (!row) return c.json({ ok: true });
   // The key matched FIELD_KEY_PATTERN when it was created, so it is a plain JSON path segment.

@@ -24,10 +24,36 @@ D1 is the source of truth. Writes go through REST; the Worker then pushes events
 | Caller | Auth | Sees |
 |---|---|---|
 | Contact (widget, app) | `Authorization: Bearer <session>` from `POST /api/v1/session` | Their own conversations; never internal notes, assignment or priority events, tags, priority or custom fields |
-| Teammate (dashboard) | `__Host-ys_session` cookie (HttpOnly, Secure, SameSite=Strict) + Origin check on writes and websockets | Everything |
+| Teammate (dashboard) | `__Host-ys_session` cookie (HttpOnly, Secure, SameSite=Strict) + Origin check on writes and websockets; password or single sign-on | Everything their role allows (below) |
 | Host backend | — | Signs identity tokens with `IDENTITY_SECRET`; receives signed webhooks |
 
 **Identity verification.** Signed-in users are identified by a short-lived HS256 token your backend signs with `IDENTITY_SECRET` (`signUserToken` from `yunidesk/identity`). Without a valid token a caller can only be an anonymous visitor (if allowed in settings). Anonymous visitors keep a 180-day visitor token in the widget's own storage.
+
+### Roles
+
+One table, `packages/protocol/src/permissions.ts` (`can(role, action)`), used by the server (`apps/server/src/lib/permissions.ts` → `requirePermission`) and by the dashboard, which hides what a role can't do.
+
+| | owner | admin | agent | viewer |
+|---|:-:|:-:|:-:|:-:|
+| Read inbox, contacts, teammates, saved replies; edit own profile | ✓ | ✓ | ✓ | ✓ |
+| Reply, notes, attachments (`inbox.reply`); assign, snooze, resolve, mark read (`inbox.update`) | ✓ | ✓ | ✓ | |
+| Saved replies (`savedReplies.manage`) | ✓ | ✓ | ✓ | |
+| Export / erase contacts (`contacts.export`, `contacts.erase`) | ✓ | ✓ | | |
+| Settings, API keys, webhooks, assistant, audit log | ✓ | ✓ | | |
+| Invite, change and disable non-owners (`team.manage`) | ✓ | ✓ | | |
+| Make, change, disable or invite owners (`team.manageOwners`); single sign-on (`sso.manage`) | ✓ | | | |
+
+Team rules (`checkMemberChange`): there is always at least one active owner, only owners touch owners, nobody disables themselves. A role change or a disable closes that person's live sockets; pending invites go when their sender loses the right to send them. Viewers' typing signals are dropped by `InboxHub`.
+
+API keys don't have roles: the key's scopes, checked against the deny-by-default route list in `apps/server/src/lib/api-keys.ts`, are the only gate (its bot teammate's role plays no part). `/audit-log` and `/sso` are session only.
+
+### Audit log
+
+`audit_log` (migration `0010`) records sign-ins (success and failure, with the email but never the password), sign-outs, SSO sign-ins and refusals (with a reason), settings changes (which keys, never values), team invites, role changes and disables, API keys, webhook endpoints, assistant settings / knowledge / tools, contact export and erasure (the contact id only), and saved replies. `audit(c, action, target, details)` (`apps/server/src/lib/audit.ts`) writes after the response with `waitUntil` and never fails the request. Actions are listed in `AUDIT_ACTIONS` (`packages/protocol/src/types.ts`). Entries older than `auditRetentionDays` (default 365, at least 30) are purged daily.
+
+### Single sign-on (OpenID Connect)
+
+Owners configure it in Settings → Single sign-on (stored under the `sso` settings key; the client secret is sealed with `secret-box` and never returned). `GET /api/agent/auth/sso/start` reads the provider's discovery document (cached an hour), puts `state`, `nonce` and a PKCE (S256) verifier in a 10-minute signed `__Host-ys_sso` cookie (HttpOnly, SameSite=Lax) and redirects to the provider. `GET /api/agent/auth/sso/callback` (rate-limited with `AUTH_LIMITER`) checks the state, exchanges the code (`client_secret_basic`, or `client_secret_post` when that's all the provider offers), and verifies the ID token with WebCrypto against the provider's JWKS (`apps/server/src/lib/sso/id-token.ts`: RS256/ES256 only, key by `kid`, `iss`, `aud`/`azp`, `exp`/`iat` with 60 s skew, `nonce`). The email must be verified (`email_verified`, or Entra's `xms_edov`) and in an allowed domain. Then: the teammate with that email (refused if disabled), else a pending invite for it, else a new teammate with the configured role, or a refusal (invite only). Success starts the normal session; every failure is audited and lands on `/login?sso_error=<code>`. "Require SSO" refuses password sign-in and password invite acceptance for everyone but owners (their break-glass) and signs out non-owners once when turned on.
 
 **Secrets** (`wrangler secret put`): `SESSION_SECRET`, `IDENTITY_SECRET`, `SETUP_TOKEN` (first owner only), optional `RESEND_API_KEY` + `EMAIL_FROM`.
 
@@ -57,10 +83,12 @@ Shapes are in `packages/protocol/src/types.ts`. Errors: `{ error: { code, messag
 ### Team API — `/api/agent` (cookie; send `Origin`)
 | Method | Path | Notes |
 |---|---|---|
-| GET | `/auth/status` | `{ needsSetup }` |
+| GET | `/auth/status` | `AuthStatus`: `{ needsSetup, sso: { enabled, required } }` |
 | POST | `/auth/setup` | `{ setupToken, name, email, password }` → first owner |
 | POST | `/auth/login` | `{ email, password }` |
 | POST | `/auth/logout` | |
+| GET | `/auth/sso/start` | browser navigation → identity provider |
+| GET | `/auth/sso/callback` | provider redirect URI → dashboard or `/login?sso_error=` |
 | GET | `/auth/invites/:token` | `{ email, role }` |
 | POST | `/auth/invites/:token/accept` | `{ name, password }` |
 | GET | `/bootstrap` | `{ agent: Agent, teammates: PublicAgent[], settings: AdminSettings }` |
@@ -76,26 +104,30 @@ Shapes are in `packages/protocol/src/types.ts`. Errors: `{ error: { code, messag
 | POST | `/attachments` | multipart `file` |
 | GET | `/contacts` | `?q=&cursor=` → `Page<Contact>` |
 | GET | `/contacts/:id` | `{ contact, conversations: AgentConversation[] }` |
-| GET | `/contacts/:id/export` | JSON download (GDPR access) |
-| DELETE | `/contacts/:id` | owner; erases contact, messages, files (GDPR erasure) |
+| GET | `/contacts/:id/export` | `contacts.export`; JSON download (GDPR access) |
+| DELETE | `/contacts/:id` | `contacts.erase`; erases contact, messages, files (GDPR erasure) |
 | PATCH | `/me` | `{ name?, currentPassword?, newPassword? }` |
 | POST | `/me/avatar` | multipart `file` (png/jpeg/webp ≤ 2 MB) |
 | GET | `/team` | `{ agents: (Agent & { disabled })[], invites: Invite[] }` |
-| POST | `/team/invites` | owner; `{ email, role }` → `{ id, url }` (link shown once) |
-| DELETE | `/team/invites/:id` | owner |
-| PATCH | `/team/:id` | owner; `{ role?, disabled? }` |
-| GET/PUT | `/settings` | `AdminSettings` (PUT owner, partial; `helpCenter: { enabled, title, description? }`) |
-| POST | `/settings/webhook-secret` | owner; `{ secret }` shown once |
+| POST | `/team/invites` | `team.manage` (owner invites: owners); `{ email, role }` → `{ id, url }` (link shown once) |
+| DELETE | `/team/invites/:id` | `team.manage` |
+| PATCH | `/team/:id` | `team.manage`; `{ role?, disabled? }`, team rules above |
+| GET/PUT | `/settings` | `AdminSettings` (PUT `settings.manage`, partial; `helpCenter: { enabled, title, description? }`) |
+| POST | `/settings/webhook-secret` | `settings.manage`; `{ secret }` shown once |
+| GET | `/audit-log` | `auditLog.read`; `?cursor=&action=<action or group>&actor=<id>` → `Page<AuditEntry>` |
+| GET | `/audit-log/export` | `auditLog.read`; same filters, newest 10,000 as CSV |
+| GET/PUT | `/sso` | `sso.manage`; `SsoSettings` / `SsoSettingsPatch` (`clientSecret` write-only) |
+| POST | `/sso/test` | `sso.manage`; `{ issuer? }` → the provider's discovery endpoints |
 | GET/POST | `/tags` | `{ items: TagWithUsage[] }` (with total and open counts); POST `{ name, color }`, any teammate |
-| PATCH/DELETE | `/tags/:id` | owner; `{ name?, color? }` (palette: `TAG_COLORS`); delete removes it from every conversation |
-| GET/POST | `/conversation-fields` | `{ items: ConversationField[] }`; POST owner `{ key, label, type: text\|number\|select\|checkbox\|date, options? }` |
-| PATCH/DELETE | `/conversation-fields/:id` | owner; `{ label?, options? }` (key and type are fixed); delete clears its values everywhere |
-| POST | `/conversation-fields/reorder` | owner; `{ ids }` (every field, in the new order) |
+| PATCH/DELETE | `/tags/:id` | `settings.manage`; `{ name?, color? }` (palette: `TAG_COLORS`); delete removes it from every conversation |
+| GET/POST | `/conversation-fields` | `{ items: ConversationField[] }`; POST `settings.manage` `{ key, label, type: text\|number\|select\|checkbox\|date, options? }` |
+| PATCH/DELETE | `/conversation-fields/:id` | `settings.manage`; `{ label?, options? }` (key and type are fixed); delete clears its values everywhere |
+| POST | `/conversation-fields/reorder` | `settings.manage`; `{ ids }` (every field, in the new order) |
 | GET | `/conversations/:id/messages/:messageId/email` | `EmailOriginal`: the whole inbound email as text, sender checks |
-| GET/PATCH | `/email` | `EmailChannelSettings` (PATCH owner; session only) |
-| POST | `/email/test` | owner; sends a test email to yourself → `EmailTestResult` |
-| GET/POST | `/canned-responses` | `{ shortcut, title, body }` |
-| PUT/DELETE | `/canned-responses/:id` | |
+| GET/PATCH | `/email` | `EmailChannelSettings` (PATCH `settings.manage`; session only) |
+| POST | `/email/test` | `settings.manage`; sends a test email to yourself → `EmailTestResult` |
+| GET/POST | `/canned-responses` | `{ shortcut, title, body }` (POST `savedReplies.manage`) |
+| PUT/DELETE | `/canned-responses/:id` | `savedReplies.manage` |
 | GET | `/ws` | websocket → `AgentServerEvent` frames |
 | GET | `/push/public-key` | `{ publicKey }` (VAPID, base64url); created on first call |
 | GET/PUT | `/push/preferences` | `PushSettings` / partial `PushPreferences` (mine) |
@@ -154,7 +186,7 @@ Public, server-rendered web pages for the knowledge base (`apps/server/src/help-
 ## Integrations (API keys, webhook endpoints)
 
 See [INTEGRATIONS.md](INTEGRATIONS.md). In short:
-- `Authorization: Bearer ydk_…` on `/api/agent/*`. The key acts as its bot teammate, the scopes are checked against a deny-by-default route list (`apps/server/src/lib/api-keys.ts`), and there is no cookie, so no CSRF check. Owners manage keys at `/api/agent/api-keys` (session only).
+- `Authorization: Bearer ydk_…` on `/api/agent/*`. The key acts as its bot teammate, the scopes are checked against a deny-by-default route list (`apps/server/src/lib/api-keys.ts`), and there is no cookie, so no CSRF check. Owners and admins manage keys at `/api/agent/api-keys` (session only).
 - Events go to the Settings webhook and to every enabled endpoint that subscribed (`apps/server/src/lib/webhooks.ts`). Endpoint deliveries are logged in `webhook_deliveries`, retried by the every-minute cron for about 3 days, and kept 30 days.
 - OpenAPI 3.1 at `/api/openapi.json` (`apps/server/src/openapi.ts`).
 
@@ -179,7 +211,7 @@ Messages carry `email` metadata for the team only (`toContactMessage` strips it)
 ## Jobs (cron)
 - every minute: retry due webhook deliveries and email replies
 - every 5 min: wake snoozed conversations
-- daily: purge unsent uploads (1 day), resolved conversations older than `retentionDays`, silent anonymous visitors (30 days), webhook delivery logs (30 days), expired sessions/invites
+- daily: purge unsent uploads (1 day), resolved conversations older than `retentionDays`, silent anonymous visitors (30 days), webhook delivery logs (30 days), audit log entries older than `auditRetentionDays`, expired sessions/invites
 
 ## Local development
 ```

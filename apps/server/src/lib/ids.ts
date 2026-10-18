@@ -4,7 +4,7 @@ const ALPHABET = "0123456789abcdefghjkmnpqrstvwxyz";
  * Prefixed ids that sort by creation time: 10 chars of millisecond timestamp, then 16 random chars.
  * `msg_01j9...` reads well in logs and the time prefix keeps index inserts local.
  */
-export function newId(prefix: "agt" | "ctc" | "cnv" | "msg" | "att" | "inv" | "cnd" | "key" | "evt" | "whe" | "whd" | "kno" | "tol" | "tag" | "fld"): string {
+export function newId(prefix: "agt" | "ctc" | "cnv" | "msg" | "att" | "inv" | "cnd" | "key" | "evt" | "whe" | "whd" | "kno" | "tol" | "tag" | "fld" | "aud"): string {
   let time = Date.now();
   let head = "";
   for (let i = 0; i < 10; i++) {

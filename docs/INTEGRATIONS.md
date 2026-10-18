@@ -9,7 +9,7 @@ The full API is described in OpenAPI 3.1 at `https://<your-yunidesk>/api/openapi
 
 ## API keys
 
-Create one in **Settings → API keys** (owners only). Pick a name, the name shown on its replies, its scopes and an expiry. The key is shown **once**; Yunidesk stores only its SHA-256 hash.
+Create one in **Settings → API keys** (owners and admins). Pick a name, the name shown on its replies, its scopes and an expiry. The key is shown **once**; Yunidesk stores only its SHA-256 hash.
 
 ```
 Authorization: Bearer ydk_3f9k2m…

@@ -4,7 +4,7 @@ import type { ConversationField } from "yunidesk";
 import { copy, fmt } from "@/lib/copy";
 import { errorMessage } from "@/lib/api";
 import type { ConversationFieldInput } from "@/lib/endpoints";
-import { useIsOwner } from "@/hooks/use-bootstrap";
+import { useCan } from "@/hooks/use-bootstrap";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useConversationFields } from "@/features/tags/use-tags";
@@ -14,7 +14,7 @@ import { FieldDialog } from "./field-dialog";
 import { useFieldMutations } from "./use-tags-fields";
 
 export function FieldsCard() {
-  const owner = useIsOwner();
+  const owner = useCan("settings.manage");
   const fields = useConversationFields();
   const { create, update, remove, reorder } = useFieldMutations();
   const [editing, setEditing] = useState<ConversationField | "new" | null>(null);

@@ -12,6 +12,8 @@ import type {
   AssistantToolInput,
   AssistantUsage,
   Attachment,
+  AuditEntry,
+  AuthStatus,
   CannedResponse,
   Contact,
   CreatedApiKey,
@@ -36,6 +38,8 @@ import type {
   PushPreferences,
   PushSettings,
   PushSubscriptionInput,
+  SsoSettings,
+  SsoSettingsPatch,
   WebhookDelivery,
   WebhookEndpoint,
   WebhookEndpointWithSecret,
@@ -132,12 +136,34 @@ export const queryKeys = {
   pushPublicKey: ["push", "public-key"] as const,
   emailChannel: ["email-channel"] as const,
   messageEmail: (messageId: string) => ["message-email", messageId] as const,
+  auditLog: (action: string, actor: string) => ["audit-log", action, actor] as const,
+  sso: ["sso"] as const,
 };
+
+/** Result of the SSO "Test connection" button. */
+export interface SsoTestResult {
+  ok: true;
+  issuer: string;
+  authorizationEndpoint: string;
+  tokenEndpoint: string;
+  jwksUri: string;
+}
+
+function auditSearch(filters: { action?: string; actor?: string; cursor?: string | null }): string {
+  const search = new URLSearchParams();
+  if (filters.action) search.set("action", filters.action);
+  if (filters.actor) search.set("actor", filters.actor);
+  if (filters.cursor) search.set("cursor", filters.cursor);
+  const text = search.toString();
+  return text ? `?${text}` : "";
+}
 
 const enc = encodeURIComponent;
 
 export const endpoints = {
-  authStatus: () => api<{ needsSetup: boolean }>("/api/agent/auth/status"),
+  authStatus: () => api<AuthStatus>("/api/agent/auth/status"),
+  /** A page to navigate to (not fetched): the provider's sign-in, then back to the dashboard. */
+  ssoStartUrl: "/api/agent/auth/sso/start",
   setup: (body: { setupToken: string; name: string; email: string; password: string }) =>
     api<{ agent: Agent }>("/api/agent/auth/setup", { body }),
   login: (body: { email: string; password: string }) => api<{ agent: Agent }>("/api/agent/auth/login", { body }),
@@ -268,4 +294,11 @@ export const endpoints = {
   testEmail: () => api<EmailTestResult>("/api/agent/email/test", { method: "POST" }),
   messageEmail: (conversationId: string, messageId: string) =>
     api<EmailOriginal>(`/api/agent/conversations/${enc(conversationId)}/messages/${enc(messageId)}/email`),
+  auditLog: (filters: { action?: string; actor?: string; cursor?: string | null }) =>
+    api<Page<AuditEntry>>(`/api/agent/audit-log${auditSearch(filters)}`),
+  auditLogExportUrl: (filters: { action?: string; actor?: string }) => `/api/agent/audit-log/export${auditSearch(filters)}`,
+
+  sso: () => api<SsoSettings>("/api/agent/sso"),
+  saveSso: (body: SsoSettingsPatch) => api<SsoSettings>("/api/agent/sso", { method: "PUT", body: { ...body } }),
+  testSso: (issuer: string) => api<SsoTestResult>("/api/agent/sso/test", { body: { issuer } }),
 };

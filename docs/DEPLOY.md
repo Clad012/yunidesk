@@ -53,7 +53,18 @@ The help center works on the main domain at `/help` (e.g. `https://support.examp
 
 Open `https://support.example.com/setup`, enter the `SETUP_TOKEN`, your name, email and password. Then invite teammates from Settings → Team. Delete the `SETUP_TOKEN` secret afterwards.
 
-## 5. Connect your app
+## 5. Single sign-on (optional)
+
+Settings → Single sign-on (owners) shows the **redirect URI** to register: `https://support.example.com/api/agent/auth/sso/callback`. Create an OpenID Connect web application at your provider with that redirect URI and the `openid email profile` scopes, then paste the issuer URL, client ID and client secret, add your email domain(s), press **Test connection**, turn it on and save. Owners can always sign in with their password, even with "Require SSO" on, so keep one owner with a known password.
+
+- **Google Workspace** — Google Cloud console → APIs & Services → Credentials → Create OAuth client ID → *Web application*; add the redirect URI. Set the OAuth consent screen to *Internal* so only your Workspace can use it. Issuer: `https://accounts.google.com`.
+- **Microsoft Entra ID** — Entra admin center → App registrations → New registration (single tenant), redirect URI of type *Web*. Certificates & secrets → New client secret. Token configuration → Add optional claims (ID token): `email` and `xms_edov` (the verified-domain flag Yunidesk accepts instead of `email_verified`). Issuer: `https://login.microsoftonline.com/<tenant id>/v2.0` (not `common`).
+- **Okta** — Applications → Create App Integration → *OIDC* → *Web Application*; sign-in redirect URI as above; assign the people or groups. Issuer: `https://<your org>.okta.com` (org server) or `https://<your org>.okta.com/oauth2/default`.
+- **Authentik / Keycloak** — an OAuth2/OpenID provider (Authentik) or a confidential OpenID Connect client (Keycloak) with the redirect URI; the issuer is the provider's `…/application/o/<slug>/` (Authentik) or `…/realms/<realm>` (Keycloak) URL.
+
+"People without an account": *Invite only* lets in only existing teammates and people with a pending invite (they get the invite's role); otherwise new people from the allowed domains join as agents or viewers.
+
+## 6. Connect your app
 
 1. **Identity tokens** — in your API, add an authenticated route that returns a token for the signed-in user:
    ```ts
