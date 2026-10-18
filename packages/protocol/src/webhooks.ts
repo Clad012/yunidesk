@@ -43,6 +43,12 @@ const actorType: WebhookEventField = {
   title: { en: "Done by", fr: "Fait par" },
   values: ["contact", "agent", "bot", "system"],
 };
+const priorityField: WebhookEventField = {
+  path: "priority",
+  type: "string",
+  title: { en: "Priority", fr: "Priorité" },
+  values: ["low", "normal", "high", "urgent"],
+};
 const contactFields: WebhookEventField[] = [
   { path: "contact.name", type: "string", title: { en: "Customer name", fr: "Nom du client" } },
   { path: "contact.email", type: "string", title: { en: "Customer email", fr: "E-mail du client" } },
@@ -79,14 +85,15 @@ export const WEBHOOK_EVENT_CATALOG: readonly WebhookEventDescriptor[] = [
     name: "conversation.updated",
     title: { en: "Conversation updated", fr: "Conversation modifiée" },
     description: {
-      en: "A conversation's status or assignee changes.",
-      fr: "Le statut ou la personne assignée d'une conversation change.",
+      en: "A conversation's status, assignee, priority, tags or custom fields change.",
+      fr: "Le statut, la personne assignée, la priorité, les tags ou les champs personnalisés d'une conversation changent.",
     },
     fields: [
       conversationId,
       actorType,
       { path: "status", type: "string", title: { en: "Status", fr: "Statut" }, values: ["open", "snoozed", "resolved"] },
       { path: "assigneeId", type: "string", title: { en: "Assigned to", fr: "Assignée à" } },
+      priorityField,
     ],
   },
   {
@@ -135,7 +142,7 @@ export interface WebhookContactSummary {
   name: string | null;
 }
 
-export interface ConversationCreatedData {
+export interface ConversationCreatedData extends WebhookConversationLabels {
   conversationId: string;
   contactId: string;
   channel: string;
@@ -157,7 +164,16 @@ export interface MessageCreatedData {
   };
 }
 
-export interface ConversationUpdatedData {
+/** Team-only state of a conversation, carried by conversation webhooks (never sent to contacts). */
+export interface WebhookConversationLabels {
+  priority: "low" | "normal" | "high" | "urgent";
+  /** Tag names, alphabetical. */
+  tags: string[];
+  /** Values keyed by field key (text, number, select, checkbox, date as "YYYY-MM-DD"). */
+  customFields: Record<string, string | number | boolean>;
+}
+
+export interface ConversationUpdatedData extends WebhookConversationLabels {
   conversationId: string;
   contactId: string;
   actor: WebhookActor;

@@ -121,6 +121,13 @@ const KEY_ROUTES: { method: string; path: RegExp; scope: ApiScope | null }[] = [
   { method: "POST", path: new RegExp(`^/conversations/${ID}/messages$`), scope: "conversations:write" },
   { method: "PATCH", path: new RegExp(`^/conversations/${ID}$`), scope: "conversations:write" },
   { method: "POST", path: /^\/attachments$/, scope: "conversations:write" },
+  // Tags, priority and custom fields (priority and values go through PATCH /conversations/:id).
+  // Renaming/deleting tags and defining fields are owner settings: session only.
+  { method: "GET", path: /^\/tags$/, scope: "conversations:read" },
+  { method: "POST", path: /^\/tags$/, scope: "conversations:write" },
+  { method: "POST", path: new RegExp(`^/conversations/${ID}/tags$`), scope: "conversations:write" },
+  { method: "DELETE", path: new RegExp(`^/conversations/${ID}/tags/${ID}$`), scope: "conversations:write" },
+  { method: "GET", path: /^\/conversation-fields$/, scope: "conversations:read" },
   { method: "GET", path: /^\/contacts$/, scope: "contacts:read" },
   { method: "GET", path: new RegExp(`^/contacts/${ID}$`), scope: "contacts:read" },
   { method: "GET", path: /^\/assistant$/, scope: "assistant:write" },

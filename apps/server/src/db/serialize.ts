@@ -14,7 +14,9 @@ import {
   type SystemEvent,
 } from "yunidesk";
 import type { Env } from "../env";
+import { parseCustomFields } from "../lib/custom-fields";
 import { signFilePath } from "../lib/tokens";
+import { loadConversationTags } from "./tags";
 import { selectIn, type AgentRow, type AttachmentRow, type ContactRow, type ConversationRow, type MessageRow } from "./rows";
 
 export function toPublicAgent(row: Pick<AgentRow, "id" | "name" | "avatar_url"> & { kind?: AgentRow["kind"] }): PublicAgent {
@@ -145,6 +147,7 @@ export async function toAgentConversations(
     (ph) => `SELECT * FROM contacts WHERE id IN (${ph})`,
   );
   const contactMap = new Map(contacts.map((c) => [c.id, c]));
+  const tags = await loadConversationTags(env, rows.map((r) => r.id));
   const out: AgentConversation[] = [];
   for (const row of rows) {
     const contact = contactMap.get(row.contact_id);
@@ -166,6 +169,9 @@ export async function toAgentConversations(
       snoozedUntil: row.snoozed_until,
       rating: toRating(row),
       aiActive: row.ai_state === "active",
+      tags: tags.get(row.id) ?? [],
+      priority: row.priority ?? "normal",
+      customFields: parseCustomFields(row.custom_fields),
     });
   }
   return out;
@@ -201,7 +207,26 @@ export async function toContactConversations(env: Env, rows: ConversationRow[]):
     participants.set(row.conversation_id, list);
   }
 
-  return rows.map((row) => ({
+  return rows.map((row) =>
+    toContactConversation(
+      row,
+      unread.get(row.id) ?? 0,
+      (participants.get(row.id) ?? [])
+        .sort((a, b) => b.at - a.at)
+        .slice(0, 3)
+        .map((p) => agents.get(p.agent_id))
+        .filter((a): a is AgentRow => Boolean(a))
+        .map(toPublicAgent),
+    ),
+  );
+}
+
+/**
+ * The contact's view of a conversation. Built field by field on purpose: team-only data on the
+ * row (assignee, tags, priority, custom fields, snooze) must never reach the widget or app SDK.
+ */
+export function toContactConversation(row: ConversationRow, unreadCount: number, participants: PublicAgent[]): ContactConversation {
+  return {
     id: row.id,
     // Snoozing is a team-side tool; to the contact the conversation is simply open.
     status: row.status === "snoozed" ? "open" : row.status,
@@ -209,15 +234,10 @@ export async function toContactConversations(env: Env, rows: ConversationRow[]):
     updatedAt: row.updated_at,
     lastMessageAt: row.last_message_at,
     lastMessage: toPreview(row),
-    unreadCount: unread.get(row.id) ?? 0,
+    unreadCount,
     agentLastReadAt: row.agent_last_read_at,
-    participants: (participants.get(row.id) ?? [])
-      .sort((a, b) => b.at - a.at)
-      .slice(0, 3)
-      .map((p) => agents.get(p.agent_id))
-      .filter((a): a is AgentRow => Boolean(a))
-      .map(toPublicAgent),
+    participants,
     rating: toRating(row),
     aiActive: row.ai_state === "active",
-  }));
+  };
 }

@@ -1,4 +1,4 @@
-import type { AgentRole, AuthorType, Channel, ConversationStatus, MessageKind } from "yunidesk";
+import type { AgentRole, AuthorType, Channel, ConversationFieldType, ConversationPriority, ConversationStatus, MessageKind, TagColor } from "yunidesk";
 
 export interface AgentRow {
   id: string;
@@ -53,6 +53,27 @@ export interface ConversationRow {
   rating_at: number | null;
   ai_state: "active" | "handed_off" | "human" | "off" | null;
   ai_lock_until: number | null;
+  priority: ConversationPriority;
+  /** JSON object of custom field values, keyed by field key. */
+  custom_fields: string;
+}
+
+export interface TagRow {
+  id: string;
+  name: string;
+  color: TagColor;
+  created_at: number;
+}
+
+export interface ConversationFieldRow {
+  id: string;
+  key: string;
+  label: string;
+  type: ConversationFieldType;
+  /** JSON array, select fields only. */
+  options: string | null;
+  position: number;
+  created_at: number;
 }
 
 export interface MessageRow {

@@ -48,7 +48,9 @@ export type SystemEvent =
   | { type: "snoozed"; agentName: string | null; until: number }
   | { type: "assigned"; agentName: string | null; assigneeName: string | null }
   /** The customer asked for a person: the AI assistant stops answering this conversation. */
-  | { type: "handed_off"; agentName: null };
+  | { type: "handed_off"; agentName: null }
+  /** Team only: never shown to the contact. */
+  | { type: "priority"; agentName: string | null; priority: ConversationPriority };
 
 export interface Message {
   id: string;
@@ -141,6 +143,10 @@ export interface AgentConversation {
   rating: Rating | null;
   /** The AI assistant answers it (false once the customer asked for a person, or it has no assistant). */
   aiActive?: boolean;
+  /** Team only (never in contact payloads): labels, urgency and the team's own fields. */
+  tags: Tag[];
+  priority: ConversationPriority;
+  customFields: CustomFields;
 }
 
 export interface WidgetSettings {
@@ -196,6 +202,51 @@ export interface Page<T> {
   items: T[];
   nextCursor: string | null;
 }
+
+// ---- Tags, priority and custom fields (team only; contacts never see them) ----
+
+export const CONVERSATION_PRIORITIES = ["low", "normal", "high", "urgent"] as const;
+export type ConversationPriority = (typeof CONVERSATION_PRIORITIES)[number];
+
+/** The fixed palette tags are drawn from. */
+export const TAG_COLORS = ["gray", "red", "orange", "amber", "green", "teal", "blue", "violet", "pink"] as const;
+export type TagColor = (typeof TAG_COLORS)[number];
+export const MAX_TAG_NAME_LENGTH = 40;
+export const MAX_TAGS_PER_CONVERSATION = 20;
+
+export interface Tag {
+  id: string;
+  name: string;
+  color: TagColor;
+}
+
+/** A tag with how many conversations carry it (GET /tags). */
+export interface TagWithUsage extends Tag {
+  conversationCount: number;
+  openCount: number;
+  createdAt: number;
+}
+
+export const CONVERSATION_FIELD_TYPES = ["text", "number", "select", "checkbox", "date"] as const;
+export type ConversationFieldType = (typeof CONVERSATION_FIELD_TYPES)[number];
+
+/** A field the team fills in on conversations ("Plan", "Order id"). */
+export interface ConversationField {
+  id: string;
+  /** snake_case, stable: the key in `customFields`. Can't change once created. */
+  key: string;
+  label: string;
+  /** Can't change once created. */
+  type: ConversationFieldType;
+  /** Choices, for `select` only (empty otherwise). */
+  options: string[];
+  position: number;
+  createdAt: number;
+}
+
+/** text: string, number: finite number, select: one of the options, checkbox: boolean, date: "YYYY-MM-DD". */
+export type CustomFieldValue = string | number | boolean;
+export type CustomFields = Record<string, CustomFieldValue>;
 
 // ---- Realtime ----
 

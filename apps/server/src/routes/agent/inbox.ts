@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { z } from "zod";
-import type { AgentConversation, InboxCounts, Page } from "yunidesk";
+import { CONVERSATION_PRIORITIES, type AgentConversation, type InboxCounts, type Page } from "yunidesk";
 import { limit, publicOrigin, readBody, type AppContext, type AppEnv } from "../../app-env";
 import { getConversation, markRead, postMessage, updateConversation } from "../../db/conversations";
 import type { ConversationRow, MessageRow } from "../../db/rows";
@@ -20,7 +20,14 @@ const patchSchema = z.object({
   status: z.enum(["open", "snoozed", "resolved"]).optional(),
   snoozedUntil: z.number().int().positive().nullish(),
   assigneeId: z.string().max(64).nullish(),
+  priority: z.enum(CONVERSATION_PRIORITIES).optional(),
+  customFields: z.record(z.string().max(64), z.unknown()).optional(),
 });
+const prioritySchema = z.enum(CONVERSATION_PRIORITIES);
+
+/** urgent > high > normal > low, for ?sort=priority. */
+const PRIORITY_RANK_SQL = `(CASE priority WHEN 'urgent' THEN 3 WHEN 'high' THEN 2 WHEN 'normal' THEN 1 ELSE 0 END)`;
+const PRIORITY_RANK: Record<string, number> = { urgent: 3, high: 2, normal: 1, low: 0 };
 
 const PAGE_SIZE = 30;
 const MESSAGE_PAGE_SIZE = 50;
@@ -91,26 +98,46 @@ inboxRoutes.get("/", async (c) => {
     if (fts) values.push(fts);
   }
 
+  const tag = c.req.query("tag");
+  if (tag) where.push("id IN (SELECT conversation_id FROM conversation_tags WHERE tag_id = ?)"), values.push(tag);
+
+  const priority = c.req.query("priority");
+  if (priority) {
+    const parsed = prioritySchema.safeParse(priority);
+    if (!parsed.success) throw badRequest("priority must be low, normal, high or urgent");
+    where.push("priority = ?"), values.push(parsed.data);
+  }
+
+  // Default: newest activity first. sort=priority: urgent first, then high…, newest first within each.
+  const byPriority = c.req.query("sort") === "priority";
   const cursor = c.req.query("cursor");
   if (cursor) {
-    const [at, id] = cursor.split("_");
-    if (!at || !id || !/^\d+$/.test(at)) throw badRequest("Bad cursor");
-    where.push("(last_message_at < ? OR (last_message_at = ? AND id < ?))");
+    const parts = cursor.split("_");
+    const [rank, at, id] = byPriority ? parts : [null, ...parts];
+    if (!at || !id || !/^\d+$/.test(at) || (byPriority && !/^[0-3]$/.test(rank ?? ""))) throw badRequest("Bad cursor");
+    const after = "(last_message_at < ? OR (last_message_at = ? AND id < ?))";
+    if (byPriority) {
+      where.push(`(${PRIORITY_RANK_SQL} < ? OR (${PRIORITY_RANK_SQL} = ? AND ${after}))`);
+      values.push(Number(rank), Number(rank));
+    } else {
+      where.push(after);
+    }
     values.push(Number(at), Number(at), `cnv_${id}`);
   }
 
   const { results } = await c.env.DB.prepare(
     `SELECT * FROM conversations ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
-     ORDER BY last_message_at DESC, id DESC LIMIT ?`,
+     ORDER BY ${byPriority ? `${PRIORITY_RANK_SQL} DESC, ` : ""}last_message_at DESC, id DESC LIMIT ?`,
   )
     .bind(...values, PAGE_SIZE + 1)
     .all<ConversationRow>();
   const page = results.slice(0, PAGE_SIZE);
   const last = page[page.length - 1];
-  return c.json<Page<AgentConversation>>({
-    items: await withOnline(c, page),
-    nextCursor: results.length > PAGE_SIZE && last ? `${last.last_message_at}_${last.id.slice(4)}` : null,
-  });
+  const nextCursor =
+    results.length > PAGE_SIZE && last
+      ? `${byPriority ? `${PRIORITY_RANK[last.priority] ?? 1}_` : ""}${last.last_message_at}_${last.id.slice(4)}`
+      : null;
+  return c.json<Page<AgentConversation>>({ items: await withOnline(c, page), nextCursor });
 });
 
 inboxRoutes.get("/:id", async (c) => {
@@ -173,6 +200,8 @@ inboxRoutes.patch("/:id", async (c) => {
       status: patch.status,
       snoozedUntil: patch.snoozedUntil ?? null,
       assigneeId: patch.assigneeId === undefined ? undefined : patch.assigneeId,
+      priority: patch.priority,
+      customFields: patch.customFields,
     },
   );
   const [result] = await withOnline(c, [updated]);

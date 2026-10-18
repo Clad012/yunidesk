@@ -11,7 +11,9 @@ import { getSettings, toAdminSettings } from "../../lib/settings";
 import { apiKeyRoutes } from "./api-keys";
 import { assistantRoutes } from "./assistant";
 import { contactAdminRoutes } from "./contacts";
+import { conversationFieldRoutes } from "./conversation-fields";
 import { attachmentRoutes, inboxRoutes } from "./inbox";
+import { conversationTagRoutes, tagRoutes } from "./tags";
 import { teamRoutes } from "./team";
 import { webhookEndpointRoutes } from "./webhook-endpoints";
 
@@ -83,7 +85,10 @@ agentRoutes.get("/ws", async (c) => {
   return inboxHub(c.env).fetch(new Request(c.req.raw.url, { headers }));
 });
 
+agentRoutes.route("/conversations", conversationTagRoutes);
 agentRoutes.route("/conversations", inboxRoutes);
+agentRoutes.route("/tags", tagRoutes);
+agentRoutes.route("/conversation-fields", conversationFieldRoutes);
 agentRoutes.route("/attachments", attachmentRoutes);
 agentRoutes.route("/contacts", contactAdminRoutes);
 agentRoutes.route("/api-keys", apiKeyRoutes);

@@ -2,6 +2,7 @@ import {
   MAX_ATTACHMENTS_PER_MESSAGE,
   MAX_MESSAGE_LENGTH,
   type Channel,
+  type ConversationPriority,
   type ConversationStatus,
   type Message,
   type MessageKind,
@@ -12,8 +13,16 @@ import { badRequest, notFound } from "../lib/errors";
 import { newId } from "../lib/ids";
 import { contactChannel, notifyAgents, notifyContact } from "../lib/realtime";
 import { sendWebhook } from "../lib/webhooks";
-import type { WebhookActor, WebhookContactSummary } from "yunidesk/webhooks";
-import type { AgentRow, AttachmentRow, ContactRow, ConversationRow, MessageRow } from "./rows";
+import type { WebhookActor, WebhookContactSummary, WebhookConversationLabels } from "yunidesk/webhooks";
+import {
+  mergeCustomFields,
+  parseCustomFields,
+  sameCustomFields,
+  toConversationField,
+  validateCustomFieldsPatch,
+} from "../lib/custom-fields";
+import type { AgentRow, AttachmentRow, ContactRow, ConversationFieldRow, ConversationRow, MessageRow } from "./rows";
+import { loadConversationTags } from "./tags";
 import { selectIn } from "./rows";
 import { loadAgents, toAgentConversations, toContactConversations, toMessages } from "./serialize";
 
@@ -51,6 +60,41 @@ async function contactSummary(env: Env, contactId: string): Promise<WebhookConta
     .bind(contactId)
     .first<Pick<ContactRow, "id" | "external_id" | "email" | "name">>();
   return { id: contactId, externalId: row?.external_id ?? null, email: row?.email ?? null, name: row?.name ?? null };
+}
+
+/** Priority, tag names and custom fields, as conversation webhooks carry them (team only). */
+export async function conversationLabels(env: Env, row: ConversationRow): Promise<WebhookConversationLabels> {
+  const tags = (await loadConversationTags(env, [row.id])).get(row.id) ?? [];
+  return { priority: row.priority ?? "normal", tags: tags.map((t) => t.name), customFields: parseCustomFields(row.custom_fields) };
+}
+
+async function sendConversationUpdated(env: Env, row: ConversationRow, actor: WebhookActor): Promise<void> {
+  await sendWebhook(env, "conversation.updated", {
+    conversationId: row.id,
+    contactId: row.contact_id,
+    actor,
+    status: row.status,
+    assigneeId: row.assignee_id,
+    ...(await conversationLabels(env, row)),
+  });
+}
+
+/**
+ * After a team-only change that writes no timeline event (tags): bumps updated_at, tells the
+ * team's dashboards and sends conversation.updated. Contacts are not told: nothing they see changed.
+ */
+export async function labelsChanged(
+  env: Env,
+  ctx: ExecutionContext,
+  agent: AgentRow,
+  conversationId: string,
+): Promise<ConversationRow> {
+  await env.DB.prepare("UPDATE conversations SET updated_at = MAX(updated_at, ?) WHERE id = ?").bind(Date.now(), conversationId).run();
+  const current = await getConversation(env, conversationId);
+  const [agentConversation] = await toAgentConversations(env, [current]);
+  if (agentConversation) ctx.waitUntil(notifyAgents(env, { type: "conversation.updated", conversation: agentConversation }));
+  ctx.waitUntil(sendConversationUpdated(env, current, actorOf({ type: "agent", agent })));
+  return current;
 }
 
 function sameAuthor(row: MessageRow, author: Author): boolean {
@@ -110,7 +154,15 @@ export async function createConversation(
   const result = await insertMessage(env, ctx, origin, conversation, author, "text", draft, attachments);
   ctx.waitUntil(
     contactSummary(env, contactId).then((contact) =>
-      sendWebhook(env, "conversation.created", { conversationId: id, contactId, channel, contact }),
+      sendWebhook(env, "conversation.created", {
+        conversationId: id,
+        contactId,
+        channel,
+        contact,
+        priority: conversation.priority ?? "normal",
+        tags: [],
+        customFields: parseCustomFields(conversation.custom_fields),
+      }),
     ),
   );
   return result;
@@ -310,6 +362,9 @@ export interface ConversationPatch {
   status?: ConversationStatus;
   snoozedUntil?: number | null;
   assigneeId?: string | null;
+  priority?: ConversationPriority;
+  /** `{ key: value | null }`, merged into the stored values (null clears). Checked against the field definitions. */
+  customFields?: Record<string, unknown>;
 }
 
 export async function updateConversation(
@@ -358,6 +413,24 @@ export async function updateConversation(
     }
   }
 
+  if (patch.priority && patch.priority !== (conversation.priority ?? "normal")) {
+    sets.push("priority = ?");
+    values.push(patch.priority);
+    events.push({ type: "priority", agentName: agent.name, priority: patch.priority });
+  }
+
+  if (patch.customFields !== undefined) {
+    const { results } = await env.DB.prepare("SELECT * FROM conversation_fields").all<ConversationFieldRow>();
+    const checked = validateCustomFieldsPatch(results.map(toConversationField), patch.customFields);
+    if (!checked.ok) throw badRequest(checked.error, "invalid_custom_fields");
+    const current = parseCustomFields(conversation.custom_fields);
+    if (!sameCustomFields(current, mergeCustomFields(current, checked.value))) {
+      // json_patch merges in SQL, so two teammates editing different fields at once both win.
+      sets.push("custom_fields = json_patch(custom_fields, ?)");
+      values.push(JSON.stringify(checked.value));
+    }
+  }
+
   if (sets.length === 0) return conversation;
   await env.DB.prepare(`UPDATE conversations SET ${sets.join(", ")}, updated_at = ? WHERE id = ?`)
     .bind(...values, now, conversation.id)
@@ -377,15 +450,12 @@ export async function updateConversation(
       event,
     ));
   }
-  ctx.waitUntil(
-    sendWebhook(env, "conversation.updated", {
-      conversationId: current.id,
-      contactId: current.contact_id,
-      actor: actorOf({ type: "agent", agent }),
-      status: current.status,
-      assigneeId: current.assignee_id,
-    }),
-  );
+  if (events.length === 0) {
+    // Only custom fields changed: no timeline event carried the new state to the dashboards.
+    const [agentConversation] = await toAgentConversations(env, [current]);
+    if (agentConversation) ctx.waitUntil(notifyAgents(env, { type: "conversation.updated", conversation: agentConversation }));
+  }
+  ctx.waitUntil(sendConversationUpdated(env, current, actorOf({ type: "agent", agent })));
   return current;
 }
 
@@ -516,14 +586,6 @@ export async function handOffToTeam(
     [],
     { type: "handed_off", agentName: null },
   );
-  ctx.waitUntil(
-    sendWebhook(env, "conversation.updated", {
-      conversationId: updated.id,
-      contactId: updated.contact_id,
-      actor: { type: "contact", id: updated.contact_id },
-      status: updated.status,
-      assigneeId: updated.assignee_id,
-    }),
-  );
+  ctx.waitUntil(sendConversationUpdated(env, updated, { type: "contact", id: updated.contact_id }));
   return updated;
 }

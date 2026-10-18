@@ -1,4 +1,4 @@
-import { API_SCOPES } from "yunidesk";
+import { API_SCOPES, CONVERSATION_FIELD_TYPES, CONVERSATION_PRIORITIES, TAG_COLORS } from "yunidesk";
 import { WEBHOOK_EVENT_NAMES } from "yunidesk/webhooks";
 
 /** OpenAPI 3.1 description of what an API key can call, plus the webhook payloads. Served at /api/openapi.json. */
@@ -36,7 +36,31 @@ const conversationPatch = {
     status: { enum: ["open", "snoozed", "resolved"] },
     snoozedUntil: nullable(ms),
     assigneeId: nullable({ ...id("agt"), description: "A teammate id from GET /teammates" }),
+    priority: { enum: [...CONVERSATION_PRIORITIES], description: "Adds an internal timeline event; never shown to the customer" },
+    customFields: {
+      type: "object",
+      description: "Merged into the stored values; null clears one. Keys must be defined fields (GET /conversation-fields).",
+      additionalProperties: { oneOf: [{ type: "string" }, { type: "number" }, { type: "boolean" }, { type: "null" }] },
+    },
   },
+};
+
+// Team-only labels: also in webhook payloads, never in what customers receive.
+const priority = { enum: [...CONVERSATION_PRIORITIES] };
+const customFields = {
+  type: "object",
+  description: "Values keyed by field key: text, number, select (one of the options), checkbox (boolean), date (YYYY-MM-DD)",
+  additionalProperties: { oneOf: [{ type: "string" }, { type: "number" }, { type: "boolean" }] },
+};
+const webhookLabels = {
+  priority,
+  tags: { type: "array", items: { type: "string" }, description: "Tag names, alphabetical" },
+  customFields,
+};
+const tagInput = {
+  type: "object",
+  required: ["name"],
+  properties: { name: { type: "string", minLength: 1, maxLength: 40 }, color: { enum: [...TAG_COLORS], default: "gray" } },
 };
 
 const endpointInput = {
@@ -166,6 +190,38 @@ export const openApiDocument = {
           lastMessageAt: ms,
           unread: { type: "boolean" },
           snoozedUntil: nullable(ms),
+          priority,
+          tags: { type: "array", items: ref("Tag") },
+          customFields,
+        },
+      },
+      Tag: {
+        type: "object",
+        properties: { id: id("tag"), name: { type: "string" }, color: { enum: [...TAG_COLORS] } },
+      },
+      TagWithUsage: {
+        allOf: [
+          ref("Tag"),
+          {
+            type: "object",
+            properties: {
+              conversationCount: { type: "integer" },
+              openCount: { type: "integer", description: "Open conversations carrying it" },
+              createdAt: ms,
+            },
+          },
+        ],
+      },
+      ConversationField: {
+        type: "object",
+        properties: {
+          id: id("fld"),
+          key: { type: "string", pattern: "^[a-z][a-z0-9_]{0,39}$" },
+          label: { type: "string" },
+          type: { enum: [...CONVERSATION_FIELD_TYPES] },
+          options: { type: "array", items: { type: "string" }, description: "Choices of a select field" },
+          position: { type: "integer" },
+          createdAt: ms,
         },
       },
       ApiKey: {
@@ -282,6 +338,9 @@ export const openApiDocument = {
           { name: "view", in: "query", schema: { enum: ["mine", "unassigned", "open", "snoozed", "resolved", "all"], default: "open" } },
           { name: "q", in: "query", schema: { type: "string", maxLength: 200 }, description: "Contact name/email or message text" },
           { name: "contactId", in: "query", schema: id("ctc") },
+          { name: "tag", in: "query", schema: id("tag"), description: "Only conversations with this tag" },
+          { name: "priority", in: "query", schema: priority },
+          { name: "sort", in: "query", schema: { enum: ["priority"] }, description: "Urgent, then high, normal, low; newest first within each" },
           { name: "cursor", in: "query", schema: { type: "string" } },
         ],
         responses: { "200": ok(page("Conversation")), ...errors },
@@ -297,7 +356,7 @@ export const openApiDocument = {
         parameters: [pathId("conversationId", "cnv")],
         responses: { "200": ok(ref("Conversation")), ...errors },
       }),
-      patch: op("updateConversation", "conversations:write", "Assign, snooze, resolve or reopen", {
+      patch: op("updateConversation", "conversations:write", "Assign, snooze, resolve, reopen, set the priority or custom field values", {
         parameters: [pathId("conversationId", "cnv")],
         requestBody: { content: json(conversationPatch) },
         responses: { "200": ok(ref("Conversation")), ...errors },
@@ -326,6 +385,39 @@ export const openApiDocument = {
           "201": ok({ type: "object", properties: { conversation: ref("Conversation"), message: ref("Message") } }, "Created"),
           ...errors,
         },
+      }),
+    },
+    "/conversations/{conversationId}/tags": {
+      post: op("tagConversation", "conversations:write", "Add a tag, by id or by name (a missing name is created)", {
+        parameters: [pathId("conversationId", "cnv")],
+        requestBody: {
+          content: json({
+            type: "object",
+            description: "Send tagId or name, not both",
+            properties: { tagId: id("tag"), name: { type: "string", maxLength: 40 }, color: { enum: [...TAG_COLORS] } },
+          }),
+        },
+        responses: { "200": ok(ref("Conversation")), ...errors },
+      }),
+    },
+    "/conversations/{conversationId}/tags/{tagId}": {
+      delete: op("untagConversation", "conversations:write", "Remove a tag", {
+        parameters: [pathId("conversationId", "cnv"), pathId("tagId", "tag")],
+        responses: { "200": ok(ref("Conversation")), ...errors },
+      }),
+    },
+    "/tags": {
+      get: op("listTags", "conversations:read", "Every tag, alphabetical, with how many conversations carry it", {
+        responses: { "200": ok({ type: "object", properties: { items: { type: "array", items: ref("TagWithUsage") } } }), ...errors },
+      }),
+      post: op("createTag", "conversations:write", "Create a tag (renaming and deleting are owner settings)", {
+        requestBody: { content: json(tagInput) },
+        responses: { "201": ok(ref("TagWithUsage"), "Created"), ...errors },
+      }),
+    },
+    "/conversation-fields": {
+      get: op("listConversationFields", "conversations:read", "Custom fields defined by the owners, in display order", {
+        responses: { "200": ok({ type: "object", properties: { items: { type: "array", items: ref("ConversationField") } } }), ...errors },
       }),
     },
     "/attachments": {
@@ -401,7 +493,7 @@ export const openApiDocument = {
   webhooks: {
     "conversation.created": webhookEvent("conversation.created", {
       type: "object",
-      properties: { conversationId: id("cnv"), contactId: id("ctc"), channel: { type: "string" }, contact: contactSummary },
+      properties: { conversationId: id("cnv"), contactId: id("ctc"), channel: { type: "string" }, contact: contactSummary, ...webhookLabels },
     }),
     "message.created": webhookEvent("message.created", {
       type: "object",
@@ -432,6 +524,7 @@ export const openApiDocument = {
         actor,
         status: { enum: ["open", "snoozed", "resolved"] },
         assigneeId: nullable(id("agt")),
+        ...webhookLabels,
       },
     }),
     "conversation.unread_reply": webhookEvent("conversation.unread_reply", {
