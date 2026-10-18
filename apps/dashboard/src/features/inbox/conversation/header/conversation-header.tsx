@@ -12,6 +12,7 @@ import { contactLabel } from "../../lib/labels";
 import { AiAnsweringChip } from "../ai-answering-chip";
 import type { useConversationActions } from "../use-conversation-actions";
 import { AssignMenu } from "./assign-menu";
+import { PriorityMenu } from "./priority-menu";
 import { SnoozeMenu } from "./snooze-menu";
 
 interface ConversationHeaderProps {
@@ -49,6 +50,7 @@ export function ConversationHeader({ conversation, actions, panelOpen, onToggleP
         <span className="hidden shrink-0 lg:inline-flex"><StatusBadge conversation={conversation} /></span>
         {conversation.aiActive ? <AiAnsweringChip /> : null}
       </div>
+      <PriorityMenu priority={conversation.priority} onChange={actions.setPriority} />
       <AssignMenu conversation={conversation} onAssign={actions.assign} />
       <SnoozeMenu onSnooze={actions.snooze} />
       <Tip label={<span className="flex items-center gap-1.5">{resolved ? copy.conversation.reopen : copy.conversation.resolve} <Kbd className="bg-background/20 text-background">E</Kbd></span>}>

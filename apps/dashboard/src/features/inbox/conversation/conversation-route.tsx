@@ -90,7 +90,7 @@ function ConversationView({ id }: { id: string }) {
         <TeammatesReplying conversationId={id} />
         <Composer conversation={conversation.data} send={send} />
       </div>
-      {panel.open ? <ContactPanel conversation={conversation.data} overlay={!panel.wide} onClose={panel.close} /> : null}
+      {panel.open ? <ContactPanel conversation={conversation.data} actions={actions} overlay={!panel.wide} onClose={panel.close} /> : null}
     </div>
   );
 }

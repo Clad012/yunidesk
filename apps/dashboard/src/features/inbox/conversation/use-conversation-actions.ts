@@ -1,7 +1,8 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import type { AgentConversation } from "yunidesk";
+import type { AgentConversation, ConversationPriority, CustomFields, CustomFieldValue } from "yunidesk";
 import { copy, fmt } from "@/lib/copy";
+import { errorMessage } from "@/lib/api";
 import { endpoints, queryKeys, type ConversationPatch } from "@/lib/endpoints";
 import { applyConversation } from "@/lib/realtime/apply-event";
 import { formatUntil } from "@/lib/time";
@@ -11,13 +12,23 @@ function toastFor(patch: ConversationPatch, result: AgentConversation): string |
   if (patch.status === "resolved") return copy.conversation.resolved;
   if (patch.status === "open") return copy.conversation.reopened;
   if (patch.status === "snoozed" && result.snoozedUntil) return fmt(copy.conversation.snoozed, { time: formatUntil(result.snoozedUntil) });
+  if (patch.priority) return fmt(copy.priority.set, { priority: copy.priority[patch.priority] });
   if (patch.assigneeId !== undefined) {
     return result.assignee ? fmt(copy.conversation.assigned, { name: result.assignee.name }) : copy.conversation.unassignedToast;
   }
   return null;
 }
 
-/** Status, snooze and assignment changes, applied optimistically to every cached list. */
+function mergeFields(current: CustomFields, patch: Record<string, CustomFieldValue | null>): CustomFields {
+  const out = { ...current };
+  for (const [key, value] of Object.entries(patch)) {
+    if (value === null || value === "") delete out[key];
+    else out[key] = value;
+  }
+  return out;
+}
+
+/** Status, snooze, assignment, priority and field changes, applied optimistically to every cached list. */
 export function useConversationActions(conversation: AgentConversation | undefined) {
   const qc = useQueryClient();
   const { agent, teammates } = useBootstrap();
@@ -36,6 +47,8 @@ export function useConversationActions(conversation: AgentConversation | undefin
           status: patch.status ?? conversation.status,
           snoozedUntil: patch.snoozedUntil !== undefined ? patch.snoozedUntil : conversation.snoozedUntil,
           assignee,
+          priority: patch.priority ?? conversation.priority,
+          customFields: patch.customFields ? mergeFields(conversation.customFields, patch.customFields) : conversation.customFields,
         },
         agent.id,
       );
@@ -46,9 +59,9 @@ export function useConversationActions(conversation: AgentConversation | undefin
       const message = toastFor(patch, result);
       if (message) toast.success(message);
     },
-    onError: (_error, _patch, context) => {
+    onError: (error, _patch, context) => {
       if (context?.previous) applyConversation(qc, context.previous, agent.id);
-      toast.error(copy.conversation.actionFailed);
+      toast.error(copy.conversation.actionFailed, { description: errorMessage(error, "") || undefined });
     },
     onSettled: () => {
       if (conversation) void qc.invalidateQueries({ queryKey: queryKeys.messages(conversation.id) });
@@ -62,5 +75,7 @@ export function useConversationActions(conversation: AgentConversation | undefin
     toggleResolved: () => mutation.mutate({ status: conversation?.status === "resolved" ? "open" : "resolved" }),
     snooze: (until: number) => mutation.mutate({ status: "snoozed", snoozedUntil: until }),
     assign: (assigneeId: string | null) => mutation.mutate({ assigneeId }),
+    setPriority: (priority: ConversationPriority) => mutation.mutate({ priority }),
+    setField: (key: string, value: CustomFieldValue | null) => mutation.mutate({ customFields: { [key]: value } }),
   };
 }

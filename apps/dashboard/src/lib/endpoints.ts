@@ -15,7 +15,11 @@ import type {
   CannedResponse,
   Contact,
   CreatedApiKey,
+  ConversationField,
+  ConversationFieldType,
+  ConversationPriority,
   ConversationStatus,
+  CustomFieldValue,
   InboxCounts,
   Invite,
   KnowledgeInput,
@@ -23,6 +27,8 @@ import type {
   Message,
   Page,
   PublicAgent,
+  TagColor,
+  TagWithUsage,
   WebhookDelivery,
   WebhookEndpoint,
   WebhookEndpointWithSecret,
@@ -45,6 +51,24 @@ export interface ConversationPatch {
   status?: ConversationStatus;
   snoozedUntil?: number | null;
   assigneeId?: string | null;
+  priority?: ConversationPriority;
+  /** Merged into the stored values; null clears one. */
+  customFields?: Record<string, CustomFieldValue | null>;
+}
+
+/** Narrow an inbox list (combinable with the view and the search). */
+export interface ListFilters {
+  tag?: string;
+  priority?: ConversationPriority;
+  /** Urgent first, then high, normal, low; newest first within each. */
+  sort?: "priority";
+}
+
+export interface ConversationFieldInput {
+  key: string;
+  label: string;
+  type: ConversationFieldType;
+  options?: string[];
 }
 
 export interface CreateApiKeyInput {
@@ -78,7 +102,8 @@ export const queryKeys = {
   bootstrap: ["bootstrap"] as const,
   counts: ["counts"] as const,
   conversationLists: ["conversations"] as const,
-  conversationList: (view: InboxView, q: string, contactId?: string) => ["conversations", view, q, contactId ?? ""] as const,
+  conversationList: (view: InboxView, q: string, contactId?: string, filters: ListFilters = {}) =>
+    ["conversations", view, q, contactId ?? "", filters] as const,
   conversation: (id: string) => ["conversation", id] as const,
   messages: (id: string) => ["messages", id] as const,
   contacts: (q: string) => ["contacts", q] as const,
@@ -94,6 +119,8 @@ export const queryKeys = {
   knowledgeLists: ["assistant", "knowledge"] as const,
   knowledge: (q: string) => ["assistant", "knowledge", q] as const,
   assistantTools: ["assistant", "tools"] as const,
+  tags: ["tags"] as const,
+  conversationFields: ["conversation-fields"] as const,
 };
 
 const enc = encodeURIComponent;
@@ -110,11 +137,14 @@ export const endpoints = {
 
   bootstrap: () => api<Bootstrap>("/api/agent/bootstrap"),
   counts: () => api<InboxCounts>("/api/agent/conversations/counts"),
-  conversations: (params: { view: InboxView; q?: string; cursor?: string | null; contactId?: string }) => {
+  conversations: (params: { view: InboxView; q?: string; cursor?: string | null; contactId?: string } & ListFilters) => {
     const search = new URLSearchParams({ view: params.view });
     if (params.q) search.set("q", params.q);
     if (params.cursor) search.set("cursor", params.cursor);
     if (params.contactId) search.set("contactId", params.contactId);
+    if (params.tag) search.set("tag", params.tag);
+    if (params.priority) search.set("priority", params.priority);
+    if (params.sort) search.set("sort", params.sort);
     return api<Page<AgentConversation>>(`/api/agent/conversations?${search}`);
   },
   conversation: (id: string) => api<AgentConversation>(`/api/agent/conversations/${enc(id)}`),
@@ -194,5 +224,24 @@ export const endpoints = {
   patchAssistantTool: (id: string, body: AssistantToolPatch) =>
     api<AssistantTool>(`/api/agent/assistant/tools/${enc(id)}`, { method: "PATCH", body: { ...body } }),
   deleteAssistantTool: (id: string) => api<{ ok: true }>(`/api/agent/assistant/tools/${enc(id)}`, { method: "DELETE" }),
+  tags: () => api<{ items: TagWithUsage[] }>("/api/agent/tags"),
+  createTag: (body: { name: string; color: TagColor }) => api<TagWithUsage>("/api/agent/tags", { body }),
+  patchTag: (id: string, body: { name?: string; color?: TagColor }) =>
+    api<TagWithUsage>(`/api/agent/tags/${enc(id)}`, { method: "PATCH", body }),
+  deleteTag: (id: string) => api<{ ok: true }>(`/api/agent/tags/${enc(id)}`, { method: "DELETE" }),
+  tagConversation: (id: string, tag: { tagId: string } | { name: string; color: TagColor }) =>
+    api<AgentConversation>(`/api/agent/conversations/${enc(id)}/tags`, { body: { ...tag } }),
+  untagConversation: (id: string, tagId: string) =>
+    api<AgentConversation>(`/api/agent/conversations/${enc(id)}/tags/${enc(tagId)}`, { method: "DELETE" }),
+
+  conversationFields: () => api<{ items: ConversationField[] }>("/api/agent/conversation-fields"),
+  createConversationField: (body: ConversationFieldInput) =>
+    api<ConversationField>("/api/agent/conversation-fields", { body: { ...body } }),
+  patchConversationField: (id: string, body: { label?: string; options?: string[] }) =>
+    api<ConversationField>(`/api/agent/conversation-fields/${enc(id)}`, { method: "PATCH", body }),
+  deleteConversationField: (id: string) => api<{ ok: true }>(`/api/agent/conversation-fields/${enc(id)}`, { method: "DELETE" }),
+  reorderConversationFields: (ids: string[]) =>
+    api<{ items: ConversationField[] }>("/api/agent/conversation-fields/reorder", { body: { ids } }),
+
   rollAssistantToolSecret: () => api<{ secret: string }>("/api/agent/assistant/tools/roll-secret", { method: "POST" }),
 };

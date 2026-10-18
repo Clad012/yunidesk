@@ -12,10 +12,12 @@ import { Tip } from "@/components/ui/tooltip";
 import { contactLabel, previewText } from "../lib/labels";
 import { useInboxParams } from "../lib/use-inbox-params";
 import { AiAnsweringChip } from "../conversation/ai-answering-chip";
+import { PriorityMarker } from "../lib/priority";
+import { RowTags } from "./row-tags";
 
 export function ConversationRow({ conversation, active }: { conversation: AgentConversation; active: boolean }) {
   const { agent } = useBootstrap();
-  const { view, q } = useInboxParams();
+  const { view, search } = useInboxParams();
   const now = useNow(30_000);
   const { contact, lastMessage, assignee, unread } = conversation;
   const { prefix, text } = previewText(lastMessage, agent.name);
@@ -24,7 +26,7 @@ export function ConversationRow({ conversation, active }: { conversation: AgentC
     <Link
       to="/inbox/$view/$conversationId"
       params={{ view, conversationId: conversation.id }}
-      search={q ? { q } : {}}
+      search={search}
       data-conversation-id={conversation.id}
       className={cn(
         "flex gap-3 rounded-lg px-3 py-2.5 outline-none transition-colors hover:bg-accent/70 focus-visible:ring-[3px] focus-visible:ring-ring/40",
@@ -36,7 +38,9 @@ export function ConversationRow({ conversation, active }: { conversation: AgentC
         <div className="flex items-center gap-1.5">
           <span className={cn("truncate text-sm", unread ? "font-semibold" : "font-medium")}>{contactLabel(contact)}</span>
           <ChannelIcon channel={conversation.channel} className="size-3 shrink-0 text-muted-foreground" />
-          <span className={cn("ml-auto shrink-0 text-xs tabular-nums", unread ? "font-medium text-primary" : "text-muted-foreground")}>
+          <span className="ml-auto" />
+          <PriorityMarker priority={conversation.priority} />
+          <span className={cn(" shrink-0 text-xs tabular-nums", unread ? "font-medium text-primary" : "text-muted-foreground")}>
             {relativeShort(conversation.lastMessageAt, now)}
           </span>
         </div>
@@ -56,6 +60,7 @@ export function ConversationRow({ conversation, active }: { conversation: AgentC
           ) : null}
           {unread ? <span className="size-2 shrink-0 rounded-full bg-primary" aria-hidden /> : null}
         </div>
+        {conversation.tags.length > 0 ? <RowTags tags={conversation.tags} /> : null}
       </div>
     </Link>
   );

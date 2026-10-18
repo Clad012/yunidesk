@@ -5,20 +5,22 @@ import { useHotkeys } from "@/hooks/use-hotkeys";
 import { AnimatedListItem } from "@/components/magicui/animated-list";
 import { useInboxParams } from "../lib/use-inbox-params";
 import { ConversationRow } from "./conversation-row";
+import { ActiveFilters, ListFilterMenu } from "./list-filters";
 import { ListEmpty, ListSkeleton } from "./list-states";
 import { useConversationList } from "./use-conversation-list";
 
 export function ConversationList() {
-  const { view, q, conversationId } = useInboxParams();
+  const { view, q, conversationId, filters, search } = useInboxParams();
   const navigate = useNavigate();
-  const { items, isPending, isError, hasNextPage, isFetchingNextPage, fetchNextPage, refetch } = useConversationList(view, q);
+  const { items, isPending, isError, hasNextPage, isFetchingNextPage, fetchNextPage, refetch } = useConversationList(view, q, filters);
+  const filtered = Boolean(filters.tag || filters.priority);
   const sentinel = useRef<HTMLDivElement>(null);
   // Rows present on first load don't animate; later arrivals do.
   const known = useRef<Set<string> | null>(null);
   if (!isPending && known.current === null) known.current = new Set(items.map((c) => c.id));
   useEffect(() => {
     known.current = null;
-  }, [view, q]);
+  }, [view, q, filters.tag, filters.priority, filters.sort]);
 
   useEffect(() => {
     const node = sentinel.current;
@@ -35,7 +37,7 @@ export function ConversationList() {
     const index = items.findIndex((c) => c.id === conversationId);
     const next = items[Math.max(0, Math.min(items.length - 1, index === -1 ? 0 : index + delta))];
     if (next && next.id !== conversationId) {
-      void navigate({ to: "/inbox/$view/$conversationId", params: { view, conversationId: next.id }, search: q ? { q } : {} });
+      void navigate({ to: "/inbox/$view/$conversationId", params: { view, conversationId: next.id }, search });
       document.querySelector(`[data-conversation-id="${next.id}"]`)?.scrollIntoView({ block: "nearest" });
     }
   };
@@ -43,9 +45,11 @@ export function ConversationList() {
 
   return (
     <section className="flex w-64 shrink-0 flex-col border-r xl:w-72 2xl:w-80" aria-label={copy.views[view]}>
-      <header className="flex h-14 shrink-0 items-center border-b px-4">
+      <header className="flex h-14 shrink-0 items-center gap-2 border-b pr-2 pl-4">
         <h2 className="truncate font-semibold">{q ? `“${q}”` : copy.views[view]}</h2>
+        <ListFilterMenu />
       </header>
+      <ActiveFilters />
       <div className="min-h-0 flex-1 overflow-y-auto scrollbar-thin">
         {isPending ? (
           <ListSkeleton />
@@ -54,7 +58,7 @@ export function ConversationList() {
         ) : items.length === 0 ? (
           <ListEmpty
             title={q ? `${copy.list.emptySearch.replace("{q}", q)}` : view === "mine" ? copy.list.emptyMine : copy.list.empty}
-            hint={q ? undefined : copy.list.emptyHint}
+            hint={q || filtered ? undefined : copy.list.emptyHint}
           />
         ) : (
           <ul className="flex flex-col gap-0.5 p-1.5">

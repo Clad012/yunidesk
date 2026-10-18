@@ -1,5 +1,6 @@
 import type { QueryClient } from "@tanstack/react-query";
 import { createRootRouteWithContext, createRoute, createRouter, lazyRouteComponent, Outlet, redirect } from "@tanstack/react-router";
+import { CONVERSATION_PRIORITIES, type ConversationPriority } from "yunidesk";
 import { ApiError } from "@/lib/api";
 import { endpoints, INBOX_VIEWS, type InboxView } from "@/lib/endpoints";
 import { queryClient } from "@/lib/query-client";
@@ -65,6 +66,21 @@ const inboxIndexRoute = createRoute({
 
 export interface InboxSearch {
   q?: string;
+  /** Filters, combinable with the view and the search. */
+  tag?: string;
+  priority?: ConversationPriority;
+  sort?: "priority";
+}
+
+function parseInboxSearch(search: Record<string, unknown>): InboxSearch {
+  const out: InboxSearch = {};
+  if (typeof search.q === "string" && search.q) out.q = search.q;
+  if (typeof search.tag === "string" && /^tag_[0-9a-z]{26}$/.test(search.tag)) out.tag = search.tag;
+  if (typeof search.priority === "string" && (CONVERSATION_PRIORITIES as readonly string[]).includes(search.priority)) {
+    out.priority = search.priority as ConversationPriority;
+  }
+  if (search.sort === "priority") out.sort = "priority";
+  return out;
 }
 
 const inboxRoute = createRoute({
@@ -76,8 +92,7 @@ const inboxRoute = createRoute({
     }),
     stringify: (params: { view: InboxView }) => ({ view: params.view }),
   },
-  validateSearch: (search: Record<string, unknown>): InboxSearch =>
-    typeof search.q === "string" && search.q ? { q: search.q } : {},
+  validateSearch: parseInboxSearch,
   component: InboxPage,
 });
 

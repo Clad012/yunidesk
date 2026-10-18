@@ -7,6 +7,7 @@ import { endpoints, queryKeys, type InboxView } from "@/lib/endpoints";
 import { NumberTicker } from "@/components/magicui/number-ticker";
 import { useInboxParams } from "../lib/use-inbox-params";
 import { SearchBox } from "./search-box";
+import { TagsNav } from "./tags-nav";
 import { TeamPresence } from "./team-presence";
 
 const VIEWS: { view: InboxView; icon: LucideIcon; count?: keyof InboxCounts }[] = [
@@ -19,7 +20,7 @@ const VIEWS: { view: InboxView; icon: LucideIcon; count?: keyof InboxCounts }[] 
 ];
 
 export function ViewsPane() {
-  const { q } = useInboxParams();
+  const { search } = useInboxParams();
   const counts = useQuery({ queryKey: queryKeys.counts, queryFn: endpoints.counts });
   return (
     <aside className="hidden w-48 shrink-0 flex-col gap-4 py-3 pr-2 md:flex xl:w-56">
@@ -33,7 +34,7 @@ export function ViewsPane() {
               key={view}
               to="/inbox/$view"
               params={{ view }}
-              search={q ? { q } : {}}
+              search={search}
               activeOptions={{ includeSearch: false }}
               className="group flex h-9 items-center gap-2.5 rounded-lg px-2.5 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground data-[status=active]:bg-card data-[status=active]:font-medium data-[status=active]:text-foreground data-[status=active]:shadow-xs"
             >
@@ -44,6 +45,7 @@ export function ViewsPane() {
           );
         })}
       </nav>
+      <TagsNav />
       <TeamPresence />
     </aside>
   );

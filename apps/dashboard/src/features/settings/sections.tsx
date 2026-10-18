@@ -6,6 +6,7 @@ import { MessengerSection } from "./messenger/messenger-section";
 import { PrivacySection } from "./privacy/privacy-section";
 import { ProfileSection } from "./profile/profile-section";
 import { SavedRepliesSection } from "./saved-replies/saved-replies-section";
+import { TagsFieldsSection } from "./tags-fields/tags-fields-section";
 import { TeamSection } from "./team/team-section";
 import { WebhooksSection } from "./webhooks/webhooks-section";
 
@@ -21,4 +22,5 @@ export const settingsComponents: Record<SettingsSection, ComponentType> = {
   "api-keys": ApiKeysSection,
   privacy: PrivacySection,
   profile: ProfileSection,
+  "tags-fields": TagsFieldsSection,
 };

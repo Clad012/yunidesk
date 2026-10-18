@@ -11,6 +11,9 @@ import { ContactDetails, ContactSummary } from "@/features/contacts/contact-deta
 import { ConversationLinkList } from "@/features/contacts/conversation-link-list";
 import { useContactDetail } from "@/features/contacts/use-contact";
 import { useInboxParams } from "../../lib/use-inbox-params";
+import type { useConversationActions } from "../use-conversation-actions";
+import { ConversationFields } from "./conversation-fields";
+import { ConversationTags } from "./conversation-tags";
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
@@ -23,11 +26,12 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
 
 interface ContactPanelProps {
   conversation: AgentConversation;
+  actions: ReturnType<typeof useConversationActions>;
   overlay: boolean;
   onClose: () => void;
 }
 
-export function ContactPanel({ conversation, overlay, onClose }: ContactPanelProps) {
+export function ContactPanel({ conversation, actions, overlay, onClose }: ContactPanelProps) {
   const { view } = useInboxParams();
   const navigate = useNavigate();
   const detail = useContactDetail(conversation.contact.id);
@@ -60,6 +64,12 @@ export function ContactPanel({ conversation, overlay, onClose }: ContactPanelPro
         <div className="px-5 pb-4">
           <ContactDetails contact={contact} />
         </div>
+        <Section title={copy.tags.title}>
+          <ConversationTags conversation={conversation} />
+        </Section>
+        <Section title={copy.fields.title}>
+          <ConversationFields conversation={conversation} onSave={actions.setField} />
+        </Section>
         <Section title={copy.contactPanel.otherConversations}>
           {detail.isPending ? <Skeleton className="h-8 w-full" /> : <ConversationLinkList conversations={others} empty={copy.contactPanel.noOtherConversations} />}
         </Section>
