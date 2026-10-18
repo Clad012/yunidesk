@@ -11,6 +11,7 @@ import { agentAuthRoutes } from "./routes/agent-auth";
 import { agentRoutes } from "./routes/agent";
 import { contactRoutes } from "./routes/contact";
 import { fileRoutes } from "./routes/files";
+import { helpCenterRoutes, robotsTxt } from "./help-center/routes";
 import { openApiDocument } from "./openapi";
 
 export { ContactChannel } from "./durable/contact-channel";
@@ -81,6 +82,14 @@ app.route("/api/agent/auth", agentAuthRoutes);
 app.route("/api/agent", agentRoutes);
 app.route("/api", fileRoutes);
 app.all("/api/*", (c) => c.json({ error: { code: "not_found", message: "Not found" } }, 404));
+
+// Public help center (server-rendered knowledge pages) and, while it is on, robots.txt + sitemap.
+app.route("/help", helpCenterRoutes);
+app.use("/robots.txt", async (c, next) => {
+  const robots = await robotsTxt(c);
+  if (robots) return robots;
+  await next();
+});
 
 /** The widget page runs inside an iframe on your site; only the allowed origins may frame it. */
 app.get("/widget/", async (c) => {

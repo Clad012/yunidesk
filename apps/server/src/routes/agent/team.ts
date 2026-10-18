@@ -36,6 +36,13 @@ const settingsSchema = z.object({
   allowedOrigins: z.array(z.string().max(200).refine(isOrigin, "Use an origin like https://example.com")).max(20).optional(),
   webhookUrl: z.url({ protocol: /^https$/ }).max(500).nullable().optional(),
   retentionDays: z.number().int().min(30).max(3650).optional(),
+  helpCenter: z
+    .object({
+      enabled: z.boolean(),
+      title: z.object({ en: z.string().trim().max(80).optional(), fr: z.string().trim().max(80).optional() }),
+      description: z.object({ en: z.string().trim().max(300).optional(), fr: z.string().trim().max(300).optional() }).optional(),
+    })
+    .optional(),
 });
 const cannedSchema = z.object({
   shortcut: z.string().trim().min(1).max(40).regex(/^[\w-]+$/, "Letters, numbers, - and _ only"),

@@ -17,6 +17,7 @@
     "ai": "7.0.55",
     "hono": "4.13.13",
     "jose": "6.2.12",
+    "markdown-it": "15.0.2",
     "yunidesk": "workspace:*",
     "zod": "4.6.5"
   },

@@ -30,6 +30,19 @@ const op = (operationId: string, scope: string | null, summary: string, rest: ob
   ...rest,
 });
 
+/** Knowledge item fields; slug, category, published, position and translationOf drive the public help center (/help). */
+const knowledgeInputProperties = {
+  kind: { enum: ["faq", "article"] },
+  title: { type: "string", maxLength: 300 },
+  body: { type: "string", maxLength: 20000, description: "Markdown (raw HTML is shown as text in the help center)" },
+  locale: { enum: ["en", "fr", null], description: "Language; null for every language" },
+  slug: { type: "string", pattern: "^[a-z0-9]+(?:-[a-z0-9]+)*$", maxLength: 80, description: "Help center address, unique per language; made from the title when left out" },
+  category: nullable({ type: "string", maxLength: 60 }),
+  published: { type: "boolean", description: "Shown in the help center. Defaults to true for faq, false for article" },
+  position: { type: "integer", description: "Order inside its category, lowest first" },
+  translationOf: nullable({ type: "string", description: "Id of the item this one translates (both need a language); null unlinks" }),
+};
+
 const conversationPatch = {
   type: "object",
   properties: {
@@ -252,9 +265,17 @@ export const openApiDocument = {
     "/assistant/knowledge": {
       get: op("listKnowledge", "assistant:write", "FAQ entries and articles", { responses: { "200": ok({ type: "object" }), ...errors } }),
       post: op("createKnowledge", "assistant:write", "Add an FAQ entry or an article", {
-        requestBody: { content: json({ type: "object", required: ["kind", "title", "body"], properties: { kind: { enum: ["faq", "article"] }, title: { type: "string" }, body: { type: "string" }, locale: { enum: ["en", "fr", null], description: "Language; null for every language" } } }) },
+        requestBody: { content: json({ type: "object", required: ["kind", "title", "body"], properties: knowledgeInputProperties }) },
         responses: { "201": ok({ type: "object" }, "Created"), ...errors },
       }),
+    },
+    "/assistant/knowledge/{id}": {
+      patch: op("updateKnowledge", "assistant:write", "Change an FAQ entry or an article (any subset of the fields)", {
+        parameters: [pathId("id", "kno")],
+        requestBody: { content: json({ type: "object", properties: knowledgeInputProperties }) },
+        responses: { "200": ok({ type: "object" }), "409": { $ref: "#/components/responses/Error" }, ...errors },
+      }),
+      delete: op("deleteKnowledge", "assistant:write", "Delete an FAQ entry or an article", { parameters: [pathId("id", "kno")], responses: { "200": ok({ type: "object" }), ...errors } }),
     },
     "/assistant/tools": {
       get: op("listAssistantTools", "assistant:write", "Tools the assistant may call", { responses: { "200": ok({ type: "object" }), ...errors } }),
