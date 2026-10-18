@@ -14,6 +14,7 @@ packages/react-native  (npm: yunidesk-react-native) Native messenger for Expo / 
 ## Data (all pinned to the EU)
 
 - **D1** `yunidesk` (`--jurisdiction eu`): agents, sessions, invites, contacts, conversations, messages (+ FTS5), attachments, settings, saved replies, tags (`tags`, `conversation_tags`), custom field definitions (`conversation_fields`; values in `conversations.custom_fields`). Schema: `apps/server/migrations`.
+  Report facts live on `conversations` (see [Reports](#reports)).
 - **R2** `yunidesk-files` (`jurisdiction: eu`): attachments (private, served through signed links) and team avatars (public).
 - **Durable Objects** (`DATA_JURISDICTION=eu`): `InboxHub` (one, the team's live room) and `ContactChannel` (one per contact, all their tabs/devices). Hibernatable websockets.
 
@@ -91,12 +92,25 @@ Shapes are in `packages/protocol/src/types.ts`. Errors: `{ error: { code, messag
 | POST | `/conversation-fields/reorder` | owner; `{ ids }` (every field, in the new order) |
 | GET/POST | `/canned-responses` | `{ shortcut, title, body }` |
 | PUT/DELETE | `/canned-responses/:id` | |
+| GET | `/reports/summary` | owner (or key with `reports:read`); `?from=&to=` (YYYY-MM-DD, both included, ≤ 366 days) `&tz=` (IANA, default UTC) `&channel=&tagId=&assigneeId=<id>\|none` → `ReportSummary` (period, the period before, open/snoozed now) |
+| GET | `/reports/volume` | same query → `ReportVolume` (created/resolved per day, created per weekday × hour) |
+| GET | `/reports/teammates` | same query + `format=json\|csv` → `{ items: ReportTeammateRow[] }` or a CSV download |
+| GET | `/reports/tags` | same query + `format=json\|csv` → `{ items: ReportTagRow[] }` or a CSV download |
 | GET | `/ws` | websocket → `AgentServerEvent` frames |
 
 Websocket client frames: `{ type: "typing", conversationId, isTyping }` and `{ type: "ping" }` (answered with `{"type":"pong"}`; send every ~25 s).
 
 ### Files
 `GET /api/files/:id?exp&sig` — signed, expiring links (12 h). Images (png/jpeg/gif/webp) inline, everything else as a download; served with a sandbox CSP and `nosniff`. Uploads are checked against magic bytes.
+
+## Reports
+
+`/api/agent/reports/*` (dashboard: **Reports**). Owners only for now (the coming roles add a `reports.view` permission); API keys need `reports:read`.
+
+- **Facts kept on write.** Reports never scan messages: `conversations` carries `first_contact_message_at`, `first_human_reply_at`, `human_replied`, `ai_involved` and `reopened_count` (migration 0013, backfilled from messages). Every message goes through `insertMessage`, which applies the rules in `lib/reports/conversation-facts.ts`: only a person's text reply counts as a human reply (not AI replies, notes, events or API-key bots), and only after the customer's first message; an AI reply or a hand-off sets `ai_involved`. Leaving `resolved` (teammate reopen or snooze, the customer writing again, a hand-off) adds one to `reopened_count`.
+- **What each number counts.** Created, reopened (at least once), first response time and the AI numbers: conversations *created* in the period. Resolved and resolution time (created → resolved): conversations *resolved* in the period and still resolved. Satisfaction: ratings *given* in the period (CSAT = Great / rated). AI resolved: the assistant took part, no person ever replied, it was resolved and not handed off. Per teammate, "replied" counts conversations they replied to in the period (from the partial index `messages_team_replies`); the rest are by current assignee.
+- **Percentiles** (median, p90; linear interpolation): SQLite numbers each group's durations with `ROW_NUMBER()` and returns only the rows next to the median and the p90, so nothing is capped and nothing large leaves D1. Every query reads through a range index (`conversations_created`, `conversations_resolved`, `conversations_rated`).
+- **Time zones.** The browser sends its IANA zone. Days start at local midnight; the period is cut where the offset changes (DST) and each piece is bucketed in SQL by local hour, so a 25-hour day counts all its hours (`lib/reports/time.ts`).
 
 ## Widget embedding
 

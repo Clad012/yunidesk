@@ -18,6 +18,11 @@ import type {
   Message,
   Page,
   PublicAgent,
+  ReportQuery,
+  ReportSummary,
+  ReportTagRow,
+  ReportTeammateRow,
+  ReportVolume,
   TagColor,
   TagWithUsage,
   WebhookDelivery,
@@ -213,6 +218,14 @@ export function createYunideskApi(options: YunideskApiOptions) {
       test: (endpointId: string) => call<WebhookDelivery>("POST", `/webhook-endpoints/${id(endpointId)}/test`),
       deliveries: (endpointId: string) =>
         call<{ items: WebhookDelivery[] }>("GET", `/webhook-endpoints/${id(endpointId)}/deliveries`),
+    },
+
+    /** Reports (scope reports:read). Days are counted in `tz` (default UTC). */
+    reports: {
+      summary: (params: ReportQuery) => call<ReportSummary>("GET", `/reports/summary${query({ ...params })}`),
+      volume: (params: ReportQuery) => call<ReportVolume>("GET", `/reports/volume${query({ ...params })}`),
+      teammates: (params: ReportQuery) => call<{ items: ReportTeammateRow[] }>("GET", `/reports/teammates${query({ ...params })}`),
+      tags: (params: ReportQuery) => call<{ items: ReportTagRow[] }>("GET", `/reports/tags${query({ ...params })}`),
     },
   };
 }

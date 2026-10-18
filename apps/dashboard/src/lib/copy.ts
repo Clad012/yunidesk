@@ -469,6 +469,7 @@ export const copy = {
       "contacts:read": "Read contacts",
       "webhooks:write": "Create and manage its own webhook endpoints",
       "assistant:write": "Configure the AI assistant: settings, OpenRouter key, knowledge and tools",
+      "reports:read": "Read reports: volumes, response times, satisfaction, per teammate and per tag",
     },
   },
   assistant: {

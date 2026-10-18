@@ -325,6 +325,7 @@ export interface ApiErrorBody {
  * - contacts:read       list and read contacts
  * - webhooks:write      manage the webhook endpoints this key created
  * - assistant:write     configure the AI assistant: settings, OpenRouter key, knowledge, tools
+ * - reports:read        read reports (GET /reports/*)
  */
 export const API_SCOPES = [
   "conversations:read",
@@ -332,6 +333,7 @@ export const API_SCOPES = [
   "contacts:read",
   "webhooks:write",
   "assistant:write",
+  "reports:read",
 ] as const;
 export type ApiScope = (typeof API_SCOPES)[number];
 
@@ -471,4 +473,115 @@ export interface AssistantUsage {
   replies: number;
   costUsd: number;
   budgetUsd: number;
+}
+
+// ---- Reports (team API, owners; API keys with reports:read) ----
+
+/** Every channel a conversation can come from. Typed as a record so adding a channel fails to compile here until listed. */
+const CHANNEL_SET: Record<Channel, true> = { web: true, ios: true, android: true };
+export const CHANNELS = Object.keys(CHANNEL_SET) as Channel[];
+
+/** Longest period a report covers, in days. */
+export const MAX_REPORT_DAYS = 366;
+
+/**
+ * What a report looks at. Dates are calendar days (YYYY-MM-DD, both included) in `tz`, an IANA
+ * time zone such as "Europe/Paris" (default "UTC").
+ */
+export interface ReportQuery {
+  from: string;
+  to: string;
+  tz?: string;
+  channel?: Channel;
+  /** Only conversations carrying this tag. */
+  tagId?: string;
+  /** A teammate id, or "none" for unassigned conversations. */
+  assigneeId?: string;
+}
+
+/** Milliseconds. Median and 90th percentile (linear interpolation); null when `count` is 0. */
+export interface DurationStats {
+  count: number;
+  median: number | null;
+  p90: number | null;
+}
+
+export interface SatisfactionStats {
+  /** Ratings given in the period. */
+  rated: number;
+  great: number;
+  okay: number;
+  bad: number;
+  /** great / rated (0–1), null without ratings. */
+  csat: number | null;
+}
+
+export interface AssistantReportStats {
+  /** Conversations created in the period that the AI assistant replied to or handed off. */
+  involved: number;
+  /** Of those: resolved without any reply from a person, and not handed off. */
+  resolved: number;
+  /** Of those: handed to the team (the customer asked for a person, or a limit or an error stopped it). */
+  handedOff: number;
+  /** resolved / involved (0–1), null when the assistant took part in none. */
+  resolutionRate: number | null;
+}
+
+export interface ReportPeriodSummary {
+  from: string;
+  to: string;
+  /** Conversations created in the period. */
+  created: number;
+  /** Conversations resolved in the period (and still resolved). */
+  resolved: number;
+  /** Conversations created in the period that were reopened at least once after being resolved. */
+  reopened: number;
+  /** First contact message → first reply from a person, for conversations created in the period. */
+  firstResponse: DurationStats;
+  /** Created → resolved, for conversations resolved in the period. */
+  resolution: DurationStats;
+  /** Ratings given in the period. */
+  satisfaction: SatisfactionStats;
+  assistant: AssistantReportStats;
+}
+
+export interface ReportSummary {
+  timeZone: string;
+  current: ReportPeriodSummary;
+  /** The same number of days just before `current`. */
+  previous: ReportPeriodSummary;
+  /** Right now, whatever the period (filters still apply). */
+  snapshot: { open: number; snoozed: number };
+}
+
+export interface ReportVolume {
+  timeZone: string;
+  /** Every day of the period, in order, with conversations created and resolved that day. */
+  days: { date: string; created: number; resolved: number }[];
+  /** Conversations created, by weekday (0 = Monday … 6 = Sunday) then hour (0–23), in `timeZone`. */
+  busiestHours: number[][];
+}
+
+export interface ReportTeammateRow {
+  agent: PublicAgent;
+  /** Conversations created in the period and assigned to them now. */
+  assigned: number;
+  /** Conversations they replied to in the period. */
+  replied: number;
+  /** Conversations assigned to them and resolved in the period. */
+  resolved: number;
+  /** Median first response time (ms) of their conversations created in the period. */
+  firstResponseMedian: number | null;
+  /** Ratings given in the period on their conversations. */
+  rated: number;
+  csat: number | null;
+}
+
+export interface ReportTagRow {
+  tag: Tag;
+  /** Conversations created in the period carrying the tag. */
+  conversations: number;
+  /** Of the conversations resolved in the period carrying the tag: how many, and their median resolution time (ms). */
+  resolved: number;
+  resolutionMedian: number | null;
 }

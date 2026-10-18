@@ -28,12 +28,15 @@ Authorization: Bearer ydk_3f9k2m…
 | `conversations:write` | `POST /conversations/:id/messages` (reply or note), `PATCH /conversations/:id` (status, snooze, assignee, priority, custom field values), `POST /conversations/:id/tags`, `DELETE /conversations/:id/tags/:tagId`, `POST /tags`, `POST /attachments` |
 | `contacts:read` | `GET /contacts`, `/contacts/:id` |
 | `webhooks:write` | `/webhook-endpoints` (only the endpoints this key created) |
+| `reports:read` | `GET /reports/summary`, `/reports/volume`, `/reports/teammates`, `/reports/tags` (`?from=&to=&tz=&channel=&tagId=&assigneeId=`; the tables also as `format=csv`) |
 
 `GET /key` and `GET /events` work with any valid key. `GET /events` lists every event the server sends, with names and descriptions in English and French and the fields each carries (dotted paths inside `data`), so an integration can build its trigger list from it and offer new events without shipping anything. It returns the key, its bot and the workspace name, so you can check a key when someone connects it.
 
 All paths are under `/api/agent`. Errors look like `{ "error": { "code", "message" } }`.
 
 **Tags, priority and custom fields** are team-only: customers never see them, in the messenger or the app SDK. Tag a conversation by name in one call (`POST /conversations/:id/tags { "name": "billing" }` creates the tag when missing), filter with `GET /conversations?tag=&priority=&sort=priority`, and set values with `PATCH /conversations/:id { "priority": "urgent", "customFields": { "plan": "pro", "order_id": null } }` (merged; `null` clears; unknown keys and values that don't fit the field are refused). Renaming or deleting tags and defining fields are owner settings, never available to a key. `conversation.created` and `conversation.updated` webhooks carry `priority`, `tags` (names) and `customFields`.
+
+**Reports** (`reports:read`) return the dashboard's numbers for a period: `yunidesk.reports.summary({ from: "2026-10-01", to: "2026-10-31", tz: "Europe/Paris" })`, and `volume`, `teammates`, `tags` with the same query. Durations are in milliseconds. See [ARCHITECTURE.md](ARCHITECTURE.md#reports) for what each number counts.
 
 ### Typed client
 

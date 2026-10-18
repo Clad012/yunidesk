@@ -56,6 +56,12 @@ export interface ConversationRow {
   priority: ConversationPriority;
   /** JSON object of custom field values, keyed by field key. */
   custom_fields: string;
+  // Report facts (migration 0013), kept up to date on every write.
+  first_contact_message_at: number | null;
+  first_human_reply_at: number | null;
+  human_replied: number;
+  ai_involved: number;
+  reopened_count: number;
 }
 
 export interface TagRow {

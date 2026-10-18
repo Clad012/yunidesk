@@ -1,4 +1,4 @@
-import { API_SCOPES, CONVERSATION_FIELD_TYPES, CONVERSATION_PRIORITIES, TAG_COLORS } from "yunidesk";
+import { API_SCOPES, CHANNELS, CONVERSATION_FIELD_TYPES, CONVERSATION_PRIORITIES, MAX_REPORT_DAYS, TAG_COLORS } from "yunidesk";
 import { WEBHOOK_EVENT_NAMES } from "yunidesk/webhooks";
 
 /** OpenAPI 3.1 description of what an API key can call, plus the webhook payloads. Served at /api/openapi.json. */
@@ -104,6 +104,51 @@ const actor = {
   type: "object",
   properties: { type: { enum: ["contact", "agent", "bot", "system"] }, id: nullable({ type: "string" }) },
 };
+
+// ---- Reports ----
+const reportParameters = [
+  { name: "from", in: "query", required: true, schema: { type: "string", format: "date" }, description: "First day, YYYY-MM-DD (in tz)" },
+  { name: "to", in: "query", required: true, schema: { type: "string", format: "date" }, description: `Last day, included; at most ${MAX_REPORT_DAYS} days after from` },
+  { name: "tz", in: "query", schema: { type: "string", default: "UTC" }, description: "IANA time zone the days are counted in, e.g. Europe/Paris" },
+  { name: "channel", in: "query", schema: { enum: [...CHANNELS] } },
+  { name: "tagId", in: "query", schema: id("tag"), description: "Only conversations with this tag" },
+  { name: "assigneeId", in: "query", schema: { type: "string" }, description: "A teammate id, or none for unassigned conversations" },
+];
+const csvParameter = { name: "format", in: "query", schema: { enum: ["json", "csv"], default: "json" }, description: "csv: a spreadsheet download" };
+const durationStats = {
+  type: "object",
+  description: "Milliseconds; median and 90th percentile (linear interpolation), null when count is 0",
+  properties: { count: { type: "integer" }, median: nullable({ type: "number" }), p90: nullable({ type: "number" }) },
+};
+const ratio = nullable({ type: "number", minimum: 0, maximum: 1 });
+const reportPeriod = {
+  type: "object",
+  properties: {
+    from: { type: "string", format: "date" },
+    to: { type: "string", format: "date" },
+    created: { type: "integer", description: "Conversations created in the period" },
+    resolved: { type: "integer", description: "Conversations resolved in the period (and still resolved)" },
+    reopened: { type: "integer", description: "Conversations created in the period and reopened at least once" },
+    firstResponse: { ...durationStats, description: "First contact message to the first reply from a person (AI, notes and bots don't count); conversations created in the period" },
+    resolution: { ...durationStats, description: "Created to resolved; conversations resolved in the period" },
+    satisfaction: {
+      type: "object",
+      description: "Ratings given in the period. csat = great / rated",
+      properties: { rated: { type: "integer" }, great: { type: "integer" }, okay: { type: "integer" }, bad: { type: "integer" }, csat: ratio },
+    },
+    assistant: {
+      type: "object",
+      description: "Conversations created in the period the AI assistant replied to or handed off",
+      properties: {
+        involved: { type: "integer" },
+        resolved: { type: "integer", description: "Resolved without any reply from a person, not handed off" },
+        handedOff: { type: "integer" },
+        resolutionRate: ratio,
+      },
+    },
+  },
+};
+const reportItems = (item: object) => ok({ type: "object", properties: { items: { type: "array", items: item } } }, "OK (JSON, or text/csv with format=csv)");
 
 export const openApiDocument = {
   openapi: "3.1.0",
@@ -487,6 +532,83 @@ export const openApiDocument = {
       get: op("listWebhookDeliveries", "webhooks:write", "Last 50 deliveries", {
         parameters: [pathId("endpointId", "whe")],
         responses: { "200": ok({ type: "object", properties: { items: { type: "array", items: ref("WebhookDelivery") } } }), ...errors },
+      }),
+    },
+    "/reports/summary": {
+      get: op("getReportSummary", "reports:read", "Headline numbers for a period, the period just before it, and what is open now", {
+        parameters: reportParameters,
+        responses: {
+          "200": ok({
+            type: "object",
+            properties: {
+              timeZone: { type: "string" },
+              current: reportPeriod,
+              previous: reportPeriod,
+              snapshot: { type: "object", properties: { open: { type: "integer" }, snoozed: { type: "integer" } } },
+            },
+          }),
+          ...errors,
+        },
+      }),
+    },
+    "/reports/volume": {
+      get: op("getReportVolume", "reports:read", "Conversations created and resolved per day, and created per weekday and hour", {
+        parameters: reportParameters,
+        responses: {
+          "200": ok({
+            type: "object",
+            properties: {
+              timeZone: { type: "string" },
+              days: {
+                type: "array",
+                items: { type: "object", properties: { date: { type: "string", format: "date" }, created: { type: "integer" }, resolved: { type: "integer" } } },
+              },
+              busiestHours: {
+                type: "array",
+                description: "7 rows (Monday first) of 24 hourly counts of conversations created, in tz",
+                items: { type: "array", items: { type: "integer" } },
+              },
+            },
+          }),
+          ...errors,
+        },
+      }),
+    },
+    "/reports/teammates": {
+      get: op("getReportTeammates", "reports:read", "Per teammate: assigned, replied, resolved, median first response, satisfaction", {
+        parameters: [...reportParameters, csvParameter],
+        responses: {
+          "200": reportItems({
+            type: "object",
+            properties: {
+              agent: ref("PublicAgent"),
+              assigned: { type: "integer" },
+              replied: { type: "integer" },
+              resolved: { type: "integer" },
+              firstResponseMedian: nullable({ type: "number", description: "ms" }),
+              rated: { type: "integer" },
+              csat: ratio,
+            },
+          }),
+          ...errors,
+        },
+      }),
+    },
+    "/reports/tags": {
+      get: op("getReportTags", "reports:read", "Per tag: conversations created, resolved and their median resolution time", {
+        parameters: [...reportParameters, csvParameter],
+        responses: {
+          "200": reportItems({
+            type: "object",
+            properties: {
+              tag: { type: "object", properties: { id: id("tag"), name: { type: "string" }, color: { enum: [...TAG_COLORS] } } },
+              conversations: { type: "integer" },
+              resolved: { type: "integer" },
+              resolutionMedian: nullable({ type: "number", description: "ms" }),
+            },
+          }),
+          ...errors,
+        },
       }),
     },
   },

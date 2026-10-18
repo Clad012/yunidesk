@@ -153,6 +153,8 @@ const KEY_ROUTES: { method: string; path: RegExp; scope: ApiScope | null }[] = [
   { method: "POST", path: new RegExp(`^/webhook-endpoints/${ID}/roll-secret$`), scope: "webhooks:write" },
   { method: "POST", path: new RegExp(`^/webhook-endpoints/${ID}/test$`), scope: "webhooks:write" },
   { method: "GET", path: new RegExp(`^/webhook-endpoints/${ID}/deliveries$`), scope: "webhooks:write" },
+  // Reports (read only).
+  { method: "GET", path: /^\/reports\/(summary|volume|teammates|tags)$/, scope: "reports:read" },
 ];
 
 /**

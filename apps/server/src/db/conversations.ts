@@ -25,6 +25,7 @@ import type { AgentRow, AttachmentRow, ContactRow, ConversationFieldRow, Convers
 import { loadConversationTags } from "./tags";
 import { selectIn } from "./rows";
 import { loadAgents, toAgentConversations, toContactConversations, toMessages } from "./serialize";
+import { COUNT_REOPEN_SQL, factsEffect, factsUpdate } from "../lib/reports/conversation-facts";
 
 /** What a contact may see: their and the team's messages, plus the "resolved" marker. Never notes. */
 export const CONTACT_VISIBLE_SQL = `(kind = 'text' OR (kind = 'event' AND json_extract(event, '$.type') IN ('resolved', 'handed_off')))`;
@@ -244,7 +245,7 @@ async function insertMessage(
       statements.push(
         env.DB.prepare(
           `UPDATE conversations SET ${previewSet}, last_contact_message_at = ?, contact_last_read_at = ?,
-             status = 'open', snoozed_until = NULL, resolved_at = NULL
+             ${COUNT_REOPEN_SQL}, status = 'open', snoozed_until = NULL, resolved_at = NULL
            WHERE id = ?`,
         ).bind(...previewValues, now, now, conversation.id),
       );
@@ -277,6 +278,13 @@ async function insertMessage(
   } else {
     statements.push(env.DB.prepare("UPDATE conversations SET updated_at = ? WHERE id = ?").bind(now, conversation.id));
   }
+  // Report facts (first response, AI involvement): see lib/reports/conversation-facts.ts.
+  const facts = factsUpdate(
+    factsEffect({ authorType: author.type, agentKind: agent?.kind ?? null, kind, ai: options.ai === true, event }),
+    conversation.id,
+    now,
+  );
+  if (facts) statements.push(env.DB.prepare(facts.sql).bind(...facts.values));
 
   try {
     await env.DB.batch(statements);
@@ -404,11 +412,11 @@ export async function updateConversation(
     } else if (patch.status === "snoozed") {
       const until = patch.snoozedUntil;
       if (!until || until <= now) throw badRequest("Snooze needs a time in the future");
-      sets.push("snoozed_until = ?, resolved_at = NULL");
+      sets.push(`snoozed_until = ?, resolved_at = NULL, ${COUNT_REOPEN_SQL}`);
       values.push(until);
       events.push({ type: "snoozed", agentName: agent.name, until });
     } else {
-      sets.push("snoozed_until = NULL, resolved_at = NULL");
+      sets.push(`snoozed_until = NULL, resolved_at = NULL, ${COUNT_REOPEN_SQL}`);
       events.push({ type: "reopened", agentName: agent.name });
     }
   }
@@ -569,7 +577,8 @@ export async function handOffToTeam(
   conversation: ConversationRow,
 ): Promise<ConversationRow> {
   const changed = await env.DB.prepare(
-    "UPDATE conversations SET ai_state = 'handed_off', ai_lock_until = NULL, status = 'open', updated_at = ? WHERE id = ? AND ai_state = 'active'",
+    `UPDATE conversations SET ai_state = 'handed_off', ai_lock_until = NULL, ${COUNT_REOPEN_SQL}, status = 'open', updated_at = ?
+     WHERE id = ? AND ai_state = 'active'`,
   )
     .bind(Date.now(), conversation.id)
     .run();
