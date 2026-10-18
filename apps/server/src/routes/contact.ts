@@ -14,7 +14,9 @@ import {
   postMessage,
   rateConversation,
   handOffToTeam,
+  postAwayMessage,
 } from "../db/conversations";
+import { teamAvailability } from "../lib/business-hours";
 import type { AgentRow, ContactRow, ConversationRow, MessageRow } from "../db/rows";
 import { toAttachment, toContactConversations, toContactProfile, toMessages, toPublicAgent } from "../db/serialize";
 import { badRequest, forbidden, notFound, unauthorized } from "../lib/errors";
@@ -182,7 +184,13 @@ async function widgetConfig(c: AppContext): Promise<WidgetConfig> {
   widget.askEmailForAnonymous = widget.askEmailForAnonymous && emailConfigured(c.env);
   const assistant = await getAssistant(c.env);
   const answersThisVisitor = isAssistantReady(assistant) && (c.get("identified") || assistant.allowAnonymous);
-  return { ...widget, agents: results.map(toPublicAgent), online, assistant: answersThisVisitor ? { name: assistant.name } : null };
+  return {
+    ...widget,
+    agents: results.map(toPublicAgent),
+    online,
+    assistant: answersThisVisitor ? { name: assistant.name } : null,
+    availability: teamAvailability(settings.businessHours),
+  };
 }
 
 async function listContactConversations(c: AppContext) {
@@ -192,6 +200,13 @@ async function listContactConversations(c: AppContext) {
     .bind(c.get("contact").id)
     .all<ConversationRow>();
   return toContactConversations(c.env, results);
+}
+
+/** Outside business hours: the away message, once per closed period (never fails the send). */
+function awayReply(c: AppContext, conversationId: string): Promise<void> {
+  return postAwayMessage(c.env, c.executionCtx as ExecutionContext, publicOrigin(c), conversationId, c.get("contact").is_identified === 1).catch(
+    (error: unknown) => console.warn("away message failed", error instanceof Error ? error.message : String(error)),
+  );
 }
 
 function channelOf(c: AppContext): Channel {
@@ -223,6 +238,7 @@ contactRoutes.post("/conversations", async (c) => {
   c.executionCtx.waitUntil(
     runAssistantTurn(c.env, c.executionCtx as ExecutionContext, publicOrigin(c), result.conversation.id, clientIp(c)),
   );
+  c.executionCtx.waitUntil(awayReply(c, result.conversation.id));
   const [conversation] = await toContactConversations(c.env, [result.conversation]);
   return c.json({ conversation, message: result.message }, 201);
 });
@@ -269,6 +285,7 @@ contactRoutes.post("/conversations/:id/messages", async (c) => {
   c.executionCtx.waitUntil(
     runAssistantTurn(c.env, c.executionCtx as ExecutionContext, publicOrigin(c), conversation.id, clientIp(c)),
   );
+  c.executionCtx.waitUntil(awayReply(c, conversation.id));
   const [updated] = await toContactConversations(c.env, [result.conversation]);
   return c.json({ conversation: updated, message: result.message }, 201);
 });

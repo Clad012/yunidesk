@@ -1,4 +1,4 @@
-import type { AdminSettings, WidgetSettings } from "yunidesk";
+import { DEFAULT_BUSINESS_HOURS, type AdminSettings, type BusinessHours, type LocalizedText, type WidgetSettings } from "yunidesk";
 import type { Env } from "../env";
 
 export interface StoredSettings extends WidgetSettings {
@@ -6,6 +6,8 @@ export interface StoredSettings extends WidgetSettings {
   webhookUrl: string | null;
   webhookSecret: string | null;
   retentionDays: number;
+  businessHours: BusinessHours;
+  awayMessage: LocalizedText;
 }
 
 export const DEFAULT_SETTINGS: StoredSettings = {
@@ -21,6 +23,8 @@ export const DEFAULT_SETTINGS: StoredSettings = {
   webhookUrl: null,
   webhookSecret: null,
   retentionDays: 730,
+  businessHours: DEFAULT_BUSINESS_HOURS,
+  awayMessage: {},
 };
 
 const KEY = "workspace";

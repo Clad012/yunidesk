@@ -12,6 +12,7 @@ import { getSettings, isOrigin, saveSettings, toAdminSettings } from "../../lib/
 import { inboxHub } from "../../lib/realtime";
 import { matchesSignature } from "../../lib/uploads";
 import { isAllowedWebhookUrl } from "../../lib/webhooks";
+import { awayMessageSchema, businessHoursSchema } from "../../lib/business-hours";
 import { passwordSchema } from "../agent-auth";
 
 const INVITE_DAYS = 7;
@@ -36,6 +37,8 @@ const settingsSchema = z.object({
   allowedOrigins: z.array(z.string().max(200).refine(isOrigin, "Use an origin like https://example.com")).max(20).optional(),
   webhookUrl: z.url({ protocol: /^https$/ }).max(500).nullable().optional(),
   retentionDays: z.number().int().min(30).max(3650).optional(),
+  businessHours: businessHoursSchema.optional(),
+  awayMessage: awayMessageSchema.optional(),
 });
 const cannedSchema = z.object({
   shortcut: z.string().trim().min(1).max(40).regex(/^[\w-]+$/, "Letters, numbers, - and _ only"),

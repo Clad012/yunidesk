@@ -147,7 +147,12 @@ export const openApiDocument = {
           agent: nullable(ref("PublicAgent")),
           kind: { enum: ["text", "note", "event"], description: "note = internal, never shown to the customer" },
           body: { type: "string" },
-          event: nullable({ type: "object" }),
+          event: nullable({
+            type: "object",
+            description:
+              "Set for kind = event. `type`: resolved, reopened, snoozed, assigned, handed_off (with `backAt` when it happened outside business hours) " +
+              "or away (the automatic away message: `message` {en?, fr?}, empty = default copy, and `backAt`, when the team is back or null).",
+          }),
           attachments: { type: "array", items: ref("Attachment") },
           clientId: nullable({ type: "string" }),
           createdAt: ms,
@@ -199,6 +204,32 @@ export const openApiDocument = {
       WebhookEndpointWithSecret: {
         type: "object",
         properties: { endpoint: ref("WebhookEndpoint"), secret: { type: "string", description: "Shown once" } },
+      },
+      BusinessHours: {
+        type: "object",
+        description: "Settings → Business hours (owners, in the dashboard; not reachable with an API key). Outside them the messenger says when the team is back and customers writing to the team get the away message once.",
+        required: ["enabled", "timezone", "week", "holidays"],
+        properties: {
+          enabled: { type: "boolean", description: "Off = always open" },
+          timezone: { type: "string", description: "IANA time zone, e.g. Europe/Paris" },
+          week: {
+            type: "array",
+            maxItems: 7,
+            items: {
+              type: "object",
+              properties: {
+                day: { type: "integer", minimum: 0, maximum: 6, description: "0 = Sunday … 6 = Saturday" },
+                ranges: {
+                  type: "array",
+                  maxItems: 3,
+                  description: "In order, not overlapping, from < to, none crossing midnight",
+                  items: { type: "object", properties: { from: { type: "string", pattern: "^\\d{2}:\\d{2}$" }, to: { type: "string", description: "Up to 24:00" } } },
+                },
+              },
+            },
+          },
+          holidays: { type: "array", maxItems: 100, items: { type: "string", format: "date" }, description: "Closed all day, in `timezone`" },
+        },
       },
       WebhookDelivery: {
         type: "object",

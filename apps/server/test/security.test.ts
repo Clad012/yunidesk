@@ -16,6 +16,7 @@ describe("what a contact may see", () => {
     expect(isVisibleToContact({ kind: "event", event: JSON.stringify({ type: "resolved", agentName: "Ana" }) })).toBe(true);
     expect(isVisibleToContact({ kind: "event", event: JSON.stringify({ type: "assigned", agentName: "Ana", assigneeName: "Bob" }) })).toBe(false);
     expect(isVisibleToContact({ kind: "event", event: JSON.stringify({ type: "snoozed", agentName: "Ana", until: 1 }) })).toBe(false);
+    expect(isVisibleToContact({ kind: "event", event: JSON.stringify({ type: "away", agentName: null, message: {}, backAt: null }) })).toBe(true);
   });
 });
 

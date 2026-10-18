@@ -53,6 +53,8 @@ export interface ConversationRow {
   rating_at: number | null;
   ai_state: "active" | "handed_off" | "human" | "off" | null;
   ai_lock_until: number | null;
+  /** When the away message was last sent (business hours); once per closed period. */
+  away_notified_at: number | null;
 }
 
 export interface MessageRow {
