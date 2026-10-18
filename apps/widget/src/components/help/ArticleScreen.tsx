@@ -1,4 +1,4 @@
-import { ChevronLeft } from "lucide-react";
+import { ChevronLeft, ExternalLink } from "lucide-react";
 import { useMessenger } from "../../state/context";
 import { CloseButton } from "../common/CloseButton";
 import { IconButton } from "../common/IconButton";
@@ -26,6 +26,17 @@ export function ArticleScreen({ articleId, helpQuery }: { articleId: string; hel
             <p className="mt-4 text-[15px] leading-6 break-words whitespace-pre-wrap text-fg">
               <MessageText body={article.body} />
             </p>
+            {article.helpCenterUrl ? (
+              <a
+                href={article.helpCenterUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="mt-4 inline-flex items-center gap-1.5 text-sm font-medium text-ink underline-offset-2 hover:underline"
+              >
+                {strings.openInHelpCenter}
+                <ExternalLink className="size-3.5" aria-hidden="true" />
+              </a>
+            ) : null}
           </article>
         )}
         <div className="mt-8 rounded-2xl bg-surface p-5 shadow-card">

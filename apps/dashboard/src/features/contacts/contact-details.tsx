@@ -47,7 +47,7 @@ export function ContactDetails({ contact }: { contact: Contact }) {
             <span className="inline-flex min-w-0 items-center gap-1.5">
               <a href={`mailto:${contact.email}`} className="truncate hover:underline">{contact.email}</a>
               {!contact.emailVerified ? (
-                <span title={copy.contactPanel.unverifiedHint} className="shrink-0 rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:text-amber-400">
+                <span title={contact.lastChannel === "email" ? copy.emailMessage.unverifiedContactHint : copy.contactPanel.unverifiedHint} className="shrink-0 rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:text-amber-400">
                   {copy.contactPanel.unverified}
                 </span>
               ) : null}

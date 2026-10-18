@@ -5,6 +5,10 @@ import type {
   AgentRole,
   AgentSendMessageInput,
   ApiKey,
+  AssignmentRuleInput,
+  AssignmentSettings,
+  AssignStrategy,
+  AgentAvailability,
   ApiScope,
   AssistantSettings,
   AssistantSettingsPatch,
@@ -12,17 +16,40 @@ import type {
   AssistantToolInput,
   AssistantUsage,
   Attachment,
+  AuditEntry,
+  AuthStatus,
   CannedResponse,
   Contact,
   CreatedApiKey,
+  ConversationField,
+  ConversationFieldType,
+  ConversationPriority,
   ConversationStatus,
+  CustomFieldValue,
+  EmailChannelPatch,
+  EmailChannelSettings,
+  EmailOriginal,
+  EmailTestResult,
   InboxCounts,
   Invite,
   KnowledgeInput,
   KnowledgeItem,
   Message,
   Page,
-  PublicAgent,
+  ReportQuery,
+  ReportSummary,
+  ReportTagRow,
+  ReportTeammateRow,
+  ReportVolume,
+  TagColor,
+  TagWithUsage,
+  Team,
+  Teammate,
+  PushPreferences,
+  PushSettings,
+  PushSubscriptionInput,
+  SsoSettings,
+  SsoSettingsPatch,
   WebhookDelivery,
   WebhookEndpoint,
   WebhookEndpointWithSecret,
@@ -35,7 +62,8 @@ export const INBOX_VIEWS: readonly InboxView[] = ["mine", "unassigned", "open", 
 
 export interface Bootstrap {
   agent: Agent;
-  teammates: PublicAgent[];
+  /** Signed-in humans who can be assigned, with whether they are away. */
+  teammates: Teammate[];
   settings: AdminSettings;
 }
 
@@ -45,6 +73,28 @@ export interface ConversationPatch {
   status?: ConversationStatus;
   snoozedUntil?: number | null;
   assigneeId?: string | null;
+  priority?: ConversationPriority;
+  /** Merged into the stored values; null clears one. */
+  customFields?: Record<string, CustomFieldValue | null>;
+  /** Moves it to a team (null: out of its team). */
+  teamId?: string | null;
+}
+
+/** Narrow an inbox list (combinable with the view and the search). */
+export interface ListFilters {
+  tag?: string;
+  /** A team id: only that team's conversations. */
+  team?: string;
+  priority?: ConversationPriority;
+  /** Urgent first, then high, normal, low; newest first within each. */
+  sort?: "priority";
+}
+
+export interface ConversationFieldInput {
+  key: string;
+  label: string;
+  type: ConversationFieldType;
+  options?: string[];
 }
 
 export interface CreateApiKeyInput {
@@ -74,11 +124,18 @@ export interface AssistantPreview {
 
 export type AssistantToolPatch = Partial<AssistantToolInput>;
 
+/** What the owner saves in Settings → Teams & assignment (the whole ordered list at once). */
+export interface AssignmentInput {
+  rules: AssignmentRuleInput[];
+  fallback: { teamId: string | null; assign: AssignStrategy };
+}
+
 export const queryKeys = {
   bootstrap: ["bootstrap"] as const,
   counts: ["counts"] as const,
   conversationLists: ["conversations"] as const,
-  conversationList: (view: InboxView, q: string, contactId?: string) => ["conversations", view, q, contactId ?? ""] as const,
+  conversationList: (view: InboxView, q: string, contactId?: string, filters: ListFilters = {}) =>
+    ["conversations", view, q, contactId ?? "", filters] as const,
   conversation: (id: string) => ["conversation", id] as const,
   messages: (id: string) => ["messages", id] as const,
   contacts: (q: string) => ["contacts", q] as const,
@@ -94,12 +151,53 @@ export const queryKeys = {
   knowledgeLists: ["assistant", "knowledge"] as const,
   knowledge: (q: string) => ["assistant", "knowledge", q] as const,
   assistantTools: ["assistant", "tools"] as const,
+  tags: ["tags"] as const,
+  conversationFields: ["conversation-fields"] as const,
+  teams: ["teams"] as const,
+  assignment: ["assignment"] as const,
+  pushSettings: ["push", "settings"] as const,
+  pushPublicKey: ["push", "public-key"] as const,
+  emailChannel: ["email-channel"] as const,
+  messageEmail: (messageId: string) => ["message-email", messageId] as const,
+  auditLog: (action: string, actor: string) => ["audit-log", action, actor] as const,
+  sso: ["sso"] as const,
+  report: (kind: "summary" | "volume" | "teammates" | "tags", query: ReportQuery) => ["reports", kind, query] as const,
 };
+
+function reportSearch(query: ReportQuery, extra: Record<string, string> = {}): string {
+  const search = new URLSearchParams({ from: query.from, to: query.to, ...extra });
+  if (query.tz) search.set("tz", query.tz);
+  if (query.channel) search.set("channel", query.channel);
+  if (query.tagId) search.set("tagId", query.tagId);
+  if (query.assigneeId) search.set("assigneeId", query.assigneeId);
+  if (query.teamId) search.set("teamId", query.teamId);
+  return search.toString();
+}
+
+/** Result of the SSO "Test connection" button. */
+export interface SsoTestResult {
+  ok: true;
+  issuer: string;
+  authorizationEndpoint: string;
+  tokenEndpoint: string;
+  jwksUri: string;
+}
+
+function auditSearch(filters: { action?: string; actor?: string; cursor?: string | null }): string {
+  const search = new URLSearchParams();
+  if (filters.action) search.set("action", filters.action);
+  if (filters.actor) search.set("actor", filters.actor);
+  if (filters.cursor) search.set("cursor", filters.cursor);
+  const text = search.toString();
+  return text ? `?${text}` : "";
+}
 
 const enc = encodeURIComponent;
 
 export const endpoints = {
-  authStatus: () => api<{ needsSetup: boolean }>("/api/agent/auth/status"),
+  authStatus: () => api<AuthStatus>("/api/agent/auth/status"),
+  /** A page to navigate to (not fetched): the provider's sign-in, then back to the dashboard. */
+  ssoStartUrl: "/api/agent/auth/sso/start",
   setup: (body: { setupToken: string; name: string; email: string; password: string }) =>
     api<{ agent: Agent }>("/api/agent/auth/setup", { body }),
   login: (body: { email: string; password: string }) => api<{ agent: Agent }>("/api/agent/auth/login", { body }),
@@ -110,11 +208,15 @@ export const endpoints = {
 
   bootstrap: () => api<Bootstrap>("/api/agent/bootstrap"),
   counts: () => api<InboxCounts>("/api/agent/conversations/counts"),
-  conversations: (params: { view: InboxView; q?: string; cursor?: string | null; contactId?: string }) => {
+  conversations: (params: { view: InboxView; q?: string; cursor?: string | null; contactId?: string } & ListFilters) => {
     const search = new URLSearchParams({ view: params.view });
     if (params.q) search.set("q", params.q);
     if (params.cursor) search.set("cursor", params.cursor);
     if (params.contactId) search.set("contactId", params.contactId);
+    if (params.tag) search.set("tag", params.tag);
+    if (params.team) search.set("team", params.team);
+    if (params.priority) search.set("priority", params.priority);
+    if (params.sort) search.set("sort", params.sort);
     return api<Page<AgentConversation>>(`/api/agent/conversations?${search}`);
   },
   conversation: (id: string) => api<AgentConversation>(`/api/agent/conversations/${enc(id)}`),
@@ -194,5 +296,63 @@ export const endpoints = {
   patchAssistantTool: (id: string, body: AssistantToolPatch) =>
     api<AssistantTool>(`/api/agent/assistant/tools/${enc(id)}`, { method: "PATCH", body: { ...body } }),
   deleteAssistantTool: (id: string) => api<{ ok: true }>(`/api/agent/assistant/tools/${enc(id)}`, { method: "DELETE" }),
+  tags: () => api<{ items: TagWithUsage[] }>("/api/agent/tags"),
+  createTag: (body: { name: string; color: TagColor }) => api<TagWithUsage>("/api/agent/tags", { body }),
+  patchTag: (id: string, body: { name?: string; color?: TagColor }) =>
+    api<TagWithUsage>(`/api/agent/tags/${enc(id)}`, { method: "PATCH", body }),
+  deleteTag: (id: string) => api<{ ok: true }>(`/api/agent/tags/${enc(id)}`, { method: "DELETE" }),
+  tagConversation: (id: string, tag: { tagId: string } | { name: string; color: TagColor }) =>
+    api<AgentConversation>(`/api/agent/conversations/${enc(id)}/tags`, { body: { ...tag } }),
+  untagConversation: (id: string, tagId: string) =>
+    api<AgentConversation>(`/api/agent/conversations/${enc(id)}/tags/${enc(tagId)}`, { method: "DELETE" }),
+
+  conversationFields: () => api<{ items: ConversationField[] }>("/api/agent/conversation-fields"),
+  createConversationField: (body: ConversationFieldInput) =>
+    api<ConversationField>("/api/agent/conversation-fields", { body: { ...body } }),
+  patchConversationField: (id: string, body: { label?: string; options?: string[] }) =>
+    api<ConversationField>(`/api/agent/conversation-fields/${enc(id)}`, { method: "PATCH", body }),
+  deleteConversationField: (id: string) => api<{ ok: true }>(`/api/agent/conversation-fields/${enc(id)}`, { method: "DELETE" }),
+  reorderConversationFields: (ids: string[]) =>
+    api<{ items: ConversationField[] }>("/api/agent/conversation-fields/reorder", { body: { ids } }),
+
+  reportSummary: (query: ReportQuery) => api<ReportSummary>(`/api/agent/reports/summary?${reportSearch(query)}`),
+  reportVolume: (query: ReportQuery) => api<ReportVolume>(`/api/agent/reports/volume?${reportSearch(query)}`),
+  reportTeammates: (query: ReportQuery) => api<{ items: ReportTeammateRow[] }>(`/api/agent/reports/teammates?${reportSearch(query)}`),
+  reportTags: (query: ReportQuery) => api<{ items: ReportTagRow[] }>(`/api/agent/reports/tags?${reportSearch(query)}`),
+  /** A same-origin link the browser downloads with the session cookie. */
+  reportCsvUrl: (table: "teammates" | "tags", query: ReportQuery) => `/api/agent/reports/${table}?${reportSearch(query, { format: "csv" })}`,
+
   rollAssistantToolSecret: () => api<{ secret: string }>("/api/agent/assistant/tools/roll-secret", { method: "POST" }),
+
+  teams: () => api<{ items: Team[] }>("/api/agent/teams"),
+  createTeam: (name: string) => api<Team>("/api/agent/teams", { body: { name } }),
+  renameTeam: (id: string, name: string) => api<Team>(`/api/agent/teams/${enc(id)}`, { method: "PATCH", body: { name } }),
+  deleteTeam: (id: string) => api<{ ok: true }>(`/api/agent/teams/${enc(id)}`, { method: "DELETE" }),
+  addTeamMember: (id: string, agentId: string) => api<Team>(`/api/agent/teams/${enc(id)}/members/${enc(agentId)}`, { method: "PUT" }),
+  removeTeamMember: (id: string, agentId: string) =>
+    api<Team>(`/api/agent/teams/${enc(id)}/members/${enc(agentId)}`, { method: "DELETE" }),
+  assignment: () => api<AssignmentSettings>("/api/agent/assignment"),
+  saveAssignment: (body: AssignmentInput) => api<AssignmentSettings>("/api/agent/assignment", { method: "PUT", body: { ...body } }),
+  setCapacity: (agentId: string, maxOpen: number | null) =>
+    api<Teammate & { maxOpen: number | null }>(`/api/agent/assignment/teammates/${enc(agentId)}`, { method: "PATCH", body: { maxOpen } }),
+  setAvailability: (availability: AgentAvailability) => api<{ agent: Agent }>("/api/agent/me/availability", { method: "PUT", body: { availability } }),
+  pushPublicKey: () => api<{ publicKey: string }>("/api/agent/push/public-key"),
+  pushSettings: () => api<PushSettings>("/api/agent/push/preferences"),
+  savePushPreferences: (body: Partial<PushPreferences>) => api<PushSettings>("/api/agent/push/preferences", { method: "PUT", body: { ...body } }),
+  pushSubscribe: (body: PushSubscriptionInput) => api<PushSettings>("/api/agent/push/subscriptions", { body: { ...body } }),
+  pushUnsubscribe: (endpoint: string) => api<PushSettings>("/api/agent/push/subscriptions", { method: "DELETE", body: { endpoint } }),
+  pushTest: (endpoint: string) =>
+    api<{ outcome: "delivered" | "gone" | "failed"; status: number | null }>("/api/agent/push/test", { body: { endpoint } }),
+  emailChannel: () => api<EmailChannelSettings>("/api/agent/email"),
+  patchEmailChannel: (body: EmailChannelPatch) => api<EmailChannelSettings>("/api/agent/email", { method: "PATCH", body: { ...body } }),
+  testEmail: () => api<EmailTestResult>("/api/agent/email/test", { method: "POST" }),
+  messageEmail: (conversationId: string, messageId: string) =>
+    api<EmailOriginal>(`/api/agent/conversations/${enc(conversationId)}/messages/${enc(messageId)}/email`),
+  auditLog: (filters: { action?: string; actor?: string; cursor?: string | null }) =>
+    api<Page<AuditEntry>>(`/api/agent/audit-log${auditSearch(filters)}`),
+  auditLogExportUrl: (filters: { action?: string; actor?: string }) => `/api/agent/audit-log/export${auditSearch(filters)}`,
+
+  sso: () => api<SsoSettings>("/api/agent/sso"),
+  saveSso: (body: SsoSettingsPatch) => api<SsoSettings>("/api/agent/sso", { method: "PUT", body: { ...body } }),
+  testSso: (issuer: string) => api<SsoTestResult>("/api/agent/sso/test", { body: { issuer } }),
 };

@@ -4,7 +4,8 @@ import { publicOrigin, type AppEnv } from "../../app-env";
 import type { AttachmentRow, ContactRow, ConversationRow, MessageRow } from "../../db/rows";
 import { toContact, toMessages } from "../../db/serialize";
 import { badRequest, notFound } from "../../lib/errors";
-import { requireOwner } from "../../lib/agent-session";
+import { audit } from "../../lib/audit";
+import { requirePermission } from "../../lib/permissions";
 import { contactChannel, inboxHub, notifyAgents } from "../../lib/realtime";
 import { deleteObjects } from "../../lib/uploads";
 import { CONTACT_VISIBLE_SQL } from "../../db/conversations";
@@ -72,6 +73,7 @@ contactAdminRoutes.get("/:id", async (c) => {
 
 /** Right of access / portability (GDPR art. 15 and 20): everything we hold about one contact. */
 contactAdminRoutes.get("/:id/export", async (c) => {
+  requirePermission(c, "contacts.export");
   const contact = await findContact(c.env.DB, c.req.param("id"));
   const { results: conversations } = await c.env.DB.prepare(
     "SELECT * FROM conversations WHERE contact_id = ? ORDER BY created_at",
@@ -86,10 +88,18 @@ contactAdminRoutes.get("/:id/export", async (c) => {
       .bind(conversation.id)
       .all<MessageRow>();
     const messages = await toMessages(c.env, publicOrigin(c), results);
+    // Emails they sent, as received (the messages above only keep the new part).
+    const originals = await c.env.DB.prepare(
+      `SELECT o.message_id, o.text FROM email_originals o JOIN messages m ON m.id = o.message_id WHERE m.conversation_id = ?`,
+    )
+      .bind(conversation.id)
+      .all<{ message_id: string; text: string }>();
+    const fullEmails = new Map(originals.results.map((o) => [o.message_id, o.text]));
     exported.push({
       id: conversation.id,
       status: conversation.status,
       channel: conversation.channel,
+      ...(conversation.subject ? { subject: conversation.subject } : {}),
       createdAt: new Date(conversation.created_at).toISOString(),
       rating: conversation.rating_score ? { score: conversation.rating_score, comment: conversation.rating_comment } : null,
       messages: messages.map((m) => ({
@@ -98,9 +108,11 @@ contactAdminRoutes.get("/:id/export", async (c) => {
         text: m.body,
         event: m.event?.type ?? null,
         attachments: m.attachments.map((a) => ({ name: a.fileName, type: a.contentType, size: a.size, url: a.url })),
+        ...(fullEmails.has(m.id) ? { fullEmail: fullEmails.get(m.id) } : {}),
       })),
     });
   }
+  audit(c, "contact.exported", { type: "contact", id: contact.id }, { conversations: conversations.length });
   const profile = toContact(contact);
   const body = JSON.stringify(
     { exportedAt: new Date().toISOString(), contact: { ...profile, online: undefined }, conversations: exported },
@@ -118,7 +130,7 @@ contactAdminRoutes.get("/:id/export", async (c) => {
 
 /** Right to erasure (GDPR art. 17): the contact, their conversations, messages and files. */
 contactAdminRoutes.delete("/:id", async (c) => {
-  requireOwner(c.get("agent"));
+  requirePermission(c, "contacts.erase");
   const contact = await findContact(c.env.DB, c.req.param("id"));
   const { results: files } = await c.env.DB.prepare(
     `SELECT r2_key FROM attachments
@@ -133,6 +145,10 @@ contactAdminRoutes.delete("/:id", async (c) => {
       `DELETE FROM attachments WHERE (uploader_type = 'contact' AND uploader_id = ?)
          OR conversation_id IN (SELECT id FROM conversations WHERE contact_id = ?)`,
     ).bind(contact.id, contact.id),
+    c.env.DB.prepare(
+      `DELETE FROM email_originals WHERE message_id IN
+         (SELECT id FROM messages WHERE conversation_id IN (SELECT id FROM conversations WHERE contact_id = ?))`,
+    ).bind(contact.id),
     // Explicit rather than relying on ON DELETE CASCADE, so the FTS trigger sees every row.
     c.env.DB.prepare(
       "DELETE FROM messages WHERE conversation_id IN (SELECT id FROM conversations WHERE contact_id = ?)",
@@ -144,6 +160,8 @@ contactAdminRoutes.delete("/:id", async (c) => {
   ]);
   // Rewrites the search index so the erased words don't linger in old index segments.
   await c.env.DB.prepare("INSERT INTO messages_fts(messages_fts) VALUES('optimize')").run();
+  // The id only: who the contact was is exactly what was erased.
+  audit(c, "contact.erased", { type: "contact", id: contact.id }, { deletedFiles: files.length });
   c.executionCtx.waitUntil(
     Promise.all([
       contactChannel(c.env, contact.id).disconnectAll(),

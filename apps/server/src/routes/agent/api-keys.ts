@@ -4,7 +4,8 @@ import { API_SCOPES, type CreatedApiKey } from "yunidesk";
 import { readBody, type AppEnv } from "../../app-env";
 import type { AgentRow } from "../../db/rows";
 import { displayPrefix, generateApiKey, hashApiKey, toApiKey, type ApiKeyRow } from "../../lib/api-keys";
-import { requireOwner } from "../../lib/agent-session";
+import { audit } from "../../lib/audit";
+import { requirePermission } from "../../lib/permissions";
 import { hashPassword, randomToken } from "../../lib/crypto";
 import { conflict, notFound } from "../../lib/errors";
 import { newId } from "../../lib/ids";
@@ -21,11 +22,11 @@ const createSchema = z.object({
 const MAX_ACTIVE_KEYS = 50;
 const DAY_MS = 24 * 3600 * 1000;
 
-/** Owners manage keys from the dashboard. API keys can't reach these routes (not in the key allowlist). */
+/** Owners and admins manage keys from the dashboard. API keys can't reach these routes (not in the key allowlist). */
 export const apiKeyRoutes = new Hono<AppEnv>();
 
 apiKeyRoutes.use("*", async (c, next) => {
-  requireOwner(c.get("agent"));
+  requirePermission(c, "apiKeys.manage");
   return next();
 });
 
@@ -76,6 +77,7 @@ apiKeyRoutes.post("/", async (c) => {
   ]);
   const row = await c.env.DB.prepare("SELECT * FROM api_keys WHERE id = ?").bind(keyId).first<ApiKeyRow>();
   const bot = await c.env.DB.prepare("SELECT * FROM agents WHERE id = ?").bind(botId).first<AgentRow>();
+  audit(c, "api_key.created", { type: "api_key", id: keyId }, { name: input.name, scopes, expiresInDays: input.expiresInDays });
   return c.json<CreatedApiKey>({ apiKey: toApiKey(row!, bot!), token }, 201);
 });
 
@@ -97,6 +99,7 @@ apiKeyRoutes.delete("/:id", async (c) => {
          WHERE status = 'pending' AND endpoint_id IN (SELECT id FROM webhook_endpoints WHERE api_key_id = ?)`,
       ).bind(now, row.id),
     ]);
+    audit(c, "api_key.revoked", { type: "api_key", id: row.id }, { name: row.name });
   }
   return c.json({ ok: true });
 });

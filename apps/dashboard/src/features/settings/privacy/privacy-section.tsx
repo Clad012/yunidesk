@@ -17,12 +17,12 @@ export function PrivacySection() {
   const days = form.value.retentionDays;
   const valid = Number.isInteger(days) && days >= 30 && days <= 3650;
   return (
-    <SettingsPage title={copy.privacy.title} subtitle={copy.privacy.subtitle} ownerOnly={!form.isOwner}>
+    <SettingsPage title={copy.privacy.title} subtitle={copy.privacy.subtitle} ownerOnly={!form.canEdit}>
       <SettingsCard>
         <Field label={copy.privacy.retention} hint={copy.privacy.retentionHint} error={valid ? null : copy.privacy.retentionHint}>
           {(id) => (
             <div className="flex items-center gap-2">
-              <Input id={id} type="number" min={30} max={3650} step={1} value={Number.isFinite(days) ? days : ""} disabled={!form.isOwner} onChange={(e) => form.set("retentionDays", e.target.valueAsNumber)} className="w-28 tabular-nums" />
+              <Input id={id} type="number" min={30} max={3650} step={1} value={Number.isFinite(days) ? days : ""} disabled={!form.canEdit} onChange={(e) => form.set("retentionDays", e.target.valueAsNumber)} className="w-28 tabular-nums" />
               <span className="text-sm text-muted-foreground">{copy.privacy.retentionUnit}</span>
             </div>
           )}

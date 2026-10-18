@@ -1,4 +1,4 @@
-import { API_SCOPES } from "yunidesk";
+import { API_SCOPES, AUDIT_ACTIONS, CHANNELS, CONVERSATION_FIELD_TYPES, CONVERSATION_PRIORITIES, MAX_REPORT_DAYS, TAG_COLORS } from "yunidesk";
 import { WEBHOOK_EVENT_NAMES } from "yunidesk/webhooks";
 
 /** OpenAPI 3.1 description of what an API key can call, plus the webhook payloads. Served at /api/openapi.json. */
@@ -30,13 +30,60 @@ const op = (operationId: string, scope: string | null, summary: string, rest: ob
   ...rest,
 });
 
+/** Knowledge item fields; slug, category, published, position and translationOf drive the public help center (/help). */
+const knowledgeInputProperties = {
+  kind: { enum: ["faq", "article"] },
+  title: { type: "string", maxLength: 300 },
+  body: { type: "string", maxLength: 20000, description: "Markdown (raw HTML is shown as text in the help center)" },
+  locale: { enum: ["en", "fr", null], description: "Language; null for every language" },
+  slug: { type: "string", pattern: "^[a-z0-9]+(?:-[a-z0-9]+)*$", maxLength: 80, description: "Help center address, unique per language; made from the title when left out" },
+  category: nullable({ type: "string", maxLength: 60 }),
+  published: { type: "boolean", description: "Shown in the help center. Defaults to true for faq, false for article" },
+  position: { type: "integer", description: "Order inside its category, lowest first" },
+  translationOf: nullable({ type: "string", description: "Id of the item this one translates (both need a language); null unlinks" }),
+};
+/** Dashboard routes: cookie session only, API keys are refused. */
+const sessionOp = (operationId: string, summary: string, rest: object) => ({ operationId, summary, security: [{ session: [] }], ...rest });
+const auditFilters = (extra: object[]) => [
+  ...extra,
+  { name: "action", in: "query", schema: { type: "string" }, description: "One action (team.role_changed) or a group (team)" },
+  { name: "actor", in: "query", schema: { type: "string" }, description: "An agent or API key id" },
+];
+
 const conversationPatch = {
   type: "object",
   properties: {
     status: { enum: ["open", "snoozed", "resolved"] },
     snoozedUntil: nullable(ms),
     assigneeId: nullable({ ...id("agt"), description: "A teammate id from GET /teammates" }),
+    priority: { enum: [...CONVERSATION_PRIORITIES], description: "Adds an internal timeline event; never shown to the customer" },
+    customFields: {
+      type: "object",
+      description: "Merged into the stored values; null clears one. Keys must be defined fields (GET /conversation-fields).",
+      additionalProperties: { oneOf: [{ type: "string" }, { type: "number" }, { type: "boolean" }, { type: "null" }] },
+    },
+    teamId: nullable({ ...id("tem"), description: "Move it to a team from GET /teams (null: out of its team). Adds an internal timeline event; the assignee stays" }),
   },
+};
+
+// Team-only labels: also in webhook payloads, never in what customers receive.
+const priority = { enum: [...CONVERSATION_PRIORITIES] };
+const customFields = {
+  type: "object",
+  description: "Values keyed by field key: text, number, select (one of the options), checkbox (boolean), date (YYYY-MM-DD)",
+  additionalProperties: { oneOf: [{ type: "string" }, { type: "number" }, { type: "boolean" }] },
+};
+const webhookLabels = {
+  priority,
+  tags: { type: "array", items: { type: "string" }, description: "Tag names, alphabetical" },
+  customFields,
+  teamId: nullable(id("tem")),
+  team: nullable({ type: "string", description: "The team's name" }),
+};
+const tagInput = {
+  type: "object",
+  required: ["name"],
+  properties: { name: { type: "string", minLength: 1, maxLength: 40 }, color: { enum: [...TAG_COLORS], default: "gray" } },
 };
 
 const endpointInput = {
@@ -81,6 +128,52 @@ const actor = {
   properties: { type: { enum: ["contact", "agent", "bot", "system"] }, id: nullable({ type: "string" }) },
 };
 
+// ---- Reports ----
+const reportParameters = [
+  { name: "from", in: "query", required: true, schema: { type: "string", format: "date" }, description: "First day, YYYY-MM-DD (in tz)" },
+  { name: "to", in: "query", required: true, schema: { type: "string", format: "date" }, description: `Last day, included; at most ${MAX_REPORT_DAYS} days after from` },
+  { name: "tz", in: "query", schema: { type: "string", default: "UTC" }, description: "IANA time zone the days are counted in, e.g. Europe/Paris" },
+  { name: "channel", in: "query", schema: { enum: [...CHANNELS] } },
+  { name: "tagId", in: "query", schema: id("tag"), description: "Only conversations with this tag" },
+  { name: "assigneeId", in: "query", schema: { type: "string" }, description: "A teammate id, or none for unassigned conversations" },
+  { name: "teamId", in: "query", schema: id("tem"), description: "Only conversations in this team" },
+];
+const csvParameter = { name: "format", in: "query", schema: { enum: ["json", "csv"], default: "json" }, description: "csv: a spreadsheet download" };
+const durationStats = {
+  type: "object",
+  description: "Milliseconds; median and 90th percentile (linear interpolation), null when count is 0",
+  properties: { count: { type: "integer" }, median: nullable({ type: "number" }), p90: nullable({ type: "number" }) },
+};
+const ratio = nullable({ type: "number", minimum: 0, maximum: 1 });
+const reportPeriod = {
+  type: "object",
+  properties: {
+    from: { type: "string", format: "date" },
+    to: { type: "string", format: "date" },
+    created: { type: "integer", description: "Conversations created in the period" },
+    resolved: { type: "integer", description: "Conversations resolved in the period (and still resolved)" },
+    reopened: { type: "integer", description: "Conversations created in the period and reopened at least once" },
+    firstResponse: { ...durationStats, description: "First contact message to the first reply from a person (AI, notes and bots don't count); conversations created in the period" },
+    resolution: { ...durationStats, description: "Created to resolved; conversations resolved in the period" },
+    satisfaction: {
+      type: "object",
+      description: "Ratings given in the period. csat = great / rated",
+      properties: { rated: { type: "integer" }, great: { type: "integer" }, okay: { type: "integer" }, bad: { type: "integer" }, csat: ratio },
+    },
+    assistant: {
+      type: "object",
+      description: "Conversations created in the period the AI assistant replied to or handed off",
+      properties: {
+        involved: { type: "integer" },
+        resolved: { type: "integer", description: "Resolved without any reply from a person, not handed off" },
+        handedOff: { type: "integer" },
+        resolutionRate: ratio,
+      },
+    },
+  },
+};
+const reportItems = (item: object) => ok({ type: "object", properties: { items: { type: "array", items: item } } }, "OK (JSON, or text/csv with format=csv)");
+
 export const openApiDocument = {
   openapi: "3.1.0",
   info: {
@@ -95,6 +188,7 @@ export const openApiDocument = {
   components: {
     securitySchemes: {
       apiKey: { type: "http", scheme: "bearer", bearerFormat: "ydk_<39 chars>", description: `Scopes: ${API_SCOPES.join(", ")}` },
+      session: { type: "apiKey", in: "cookie", name: "__Host-ys_session", description: "Dashboard session; these routes refuse API keys" },
     },
     responses: {
       Error: {
@@ -147,10 +241,41 @@ export const openApiDocument = {
           agent: nullable(ref("PublicAgent")),
           kind: { enum: ["text", "note", "event"], description: "note = internal, never shown to the customer" },
           body: { type: "string" },
-          event: nullable({ type: "object" }),
+          event: nullable({
+            type: "object",
+            description:
+              "Set for kind = event. `type`: resolved, reopened, snoozed, assigned, handed_off (with `backAt` when it happened outside business hours) " +
+              "or away (the automatic away message: `message` {en?, fr?}, empty = default copy, and `backAt`, when the team is back or null).",
+          }),
           attachments: { type: "array", items: ref("Attachment") },
           clientId: nullable({ type: "string" }),
           createdAt: ms,
+          email: {
+            type: "object",
+            description: "Set on messages that travelled by email (channel email)",
+            properties: {
+              direction: { enum: ["inbound", "outbound"] },
+              status: nullable({ enum: ["pending", "sent", "failed"] }),
+              error: nullable({ type: "string" }),
+              verified: nullable({ type: "boolean", description: "Inbound: DMARC or DKIM aligned with the From domain passed" }),
+            },
+          },
+        },
+      },
+      EmailOriginal: {
+        type: "object",
+        properties: {
+          messageId: id("msg"),
+          from: { type: "object", properties: { address: { type: "string" }, name: nullable({ type: "string" }) } },
+          to: { type: "string" },
+          subject: nullable({ type: "string" }),
+          sentAt: nullable({ type: "string" }),
+          text: { type: "string", description: "The whole email as plain text (HTML-only emails are converted)" },
+          authentication: {
+            type: "object",
+            properties: { spf: nullable({ type: "string" }), dkim: nullable({ type: "string" }), dmarc: nullable({ type: "string" }), verified: { type: "boolean" } },
+          },
+          skippedAttachments: { type: "array", items: { type: "string" } },
         },
       },
       Conversation: {
@@ -158,7 +283,8 @@ export const openApiDocument = {
         properties: {
           id: id("cnv"),
           status: { enum: ["open", "snoozed", "resolved"] },
-          channel: { type: "string" },
+          channel: { enum: ["web", "ios", "android", "email"] },
+          subject: nullable({ type: "string", description: "Email conversations only" }),
           contact: ref("Contact"),
           assignee: nullable(ref("PublicAgent")),
           createdAt: ms,
@@ -166,6 +292,70 @@ export const openApiDocument = {
           lastMessageAt: ms,
           unread: { type: "boolean" },
           snoozedUntil: nullable(ms),
+          priority,
+          tags: { type: "array", items: ref("Tag") },
+          customFields,
+          team: nullable({ type: "object", properties: { id: id("tem"), name: { type: "string" } } }),
+        },
+      },
+      Teammate: {
+        allOf: [
+          ref("PublicAgent"),
+          { type: "object", properties: { availability: { enum: ["available", "away"], description: "Away teammates are never assigned automatically" } } },
+        ],
+      },
+      Team: {
+        type: "object",
+        properties: {
+          id: id("tem"),
+          name: { type: "string" },
+          members: {
+            type: "array",
+            items: {
+              allOf: [
+                ref("Teammate"),
+                {
+                  type: "object",
+                  properties: {
+                    openCount: { type: "integer", description: "Open conversations assigned to them, all teams" },
+                    maxOpen: nullable({ type: "integer", description: "Most open conversations they get automatically" }),
+                  },
+                },
+              ],
+            },
+          },
+          openCount: { type: "integer" },
+          unassignedCount: { type: "integer" },
+          createdAt: ms,
+        },
+      },
+      Tag: {
+        type: "object",
+        properties: { id: id("tag"), name: { type: "string" }, color: { enum: [...TAG_COLORS] } },
+      },
+      TagWithUsage: {
+        allOf: [
+          ref("Tag"),
+          {
+            type: "object",
+            properties: {
+              conversationCount: { type: "integer" },
+              openCount: { type: "integer", description: "Open conversations carrying it" },
+              createdAt: ms,
+            },
+          },
+        ],
+      },
+      ConversationField: {
+        type: "object",
+        properties: {
+          id: id("fld"),
+          key: { type: "string", pattern: "^[a-z][a-z0-9_]{0,39}$" },
+          label: { type: "string" },
+          type: { enum: [...CONVERSATION_FIELD_TYPES] },
+          options: { type: "array", items: { type: "string" }, description: "Choices of a select field" },
+          position: { type: "integer" },
+          createdAt: ms,
         },
       },
       ApiKey: {
@@ -199,6 +389,61 @@ export const openApiDocument = {
       WebhookEndpointWithSecret: {
         type: "object",
         properties: { endpoint: ref("WebhookEndpoint"), secret: { type: "string", description: "Shown once" } },
+      },
+      BusinessHours: {
+        type: "object",
+        description: "Settings → Business hours (owners, in the dashboard; not reachable with an API key). Outside them the messenger says when the team is back and customers writing to the team get the away message once.",
+        required: ["enabled", "timezone", "week", "holidays"],
+        properties: {
+          enabled: { type: "boolean", description: "Off = always open" },
+          timezone: { type: "string", description: "IANA time zone, e.g. Europe/Paris" },
+          week: {
+            type: "array",
+            maxItems: 7,
+            items: {
+              type: "object",
+              properties: {
+                day: { type: "integer", minimum: 0, maximum: 6, description: "0 = Sunday … 6 = Saturday" },
+                ranges: {
+                  type: "array",
+                  maxItems: 3,
+                  description: "In order, not overlapping, from < to, none crossing midnight",
+                  items: { type: "object", properties: { from: { type: "string", pattern: "^\\d{2}:\\d{2}$" }, to: { type: "string", description: "Up to 24:00" } } },
+                },
+              },
+            },
+          },
+          holidays: { type: "array", maxItems: 100, items: { type: "string", format: "date" }, description: "Closed all day, in `timezone`" },
+        },
+      },
+      AuditEntry: {
+        type: "object",
+        properties: {
+          id: id("aud"),
+          actor: {
+            type: "object",
+            properties: { type: { enum: ["agent", "api_key", "system"] }, id: nullable({ type: "string" }), name: nullable({ type: "string" }) },
+          },
+          action: { enum: [...AUDIT_ACTIONS] },
+          target: nullable({ type: "object", properties: { type: { type: "string" }, id: nullable({ type: "string" }) } }),
+          details: { type: "object", additionalProperties: true, description: "Changed keys, old and new roles, failure reasons; never secrets" },
+          ip: nullable({ type: "string" }),
+          userAgent: nullable({ type: "string" }),
+          createdAt: ms,
+        },
+      },
+      SsoSettings: {
+        type: "object",
+        properties: {
+          enabled: { type: "boolean" },
+          issuer: { type: "string" },
+          clientId: { type: "string" },
+          hasClientSecret: { type: "boolean", description: "The secret itself is never returned" },
+          allowedDomains: { type: "array", items: { type: "string" } },
+          requireSso: { type: "boolean", description: "Everyone except owners signs in with SSO" },
+          createRole: nullable({ enum: ["agent", "viewer"] }),
+          callbackUrl: { type: "string" },
+        },
       },
       WebhookDelivery: {
         type: "object",
@@ -252,9 +497,17 @@ export const openApiDocument = {
     "/assistant/knowledge": {
       get: op("listKnowledge", "assistant:write", "FAQ entries and articles", { responses: { "200": ok({ type: "object" }), ...errors } }),
       post: op("createKnowledge", "assistant:write", "Add an FAQ entry or an article", {
-        requestBody: { content: json({ type: "object", required: ["kind", "title", "body"], properties: { kind: { enum: ["faq", "article"] }, title: { type: "string" }, body: { type: "string" }, locale: { enum: ["en", "fr", null], description: "Language; null for every language" } } }) },
+        requestBody: { content: json({ type: "object", required: ["kind", "title", "body"], properties: knowledgeInputProperties }) },
         responses: { "201": ok({ type: "object" }, "Created"), ...errors },
       }),
+    },
+    "/assistant/knowledge/{id}": {
+      patch: op("updateKnowledge", "assistant:write", "Change an FAQ entry or an article (any subset of the fields)", {
+        parameters: [pathId("id", "kno")],
+        requestBody: { content: json({ type: "object", properties: knowledgeInputProperties }) },
+        responses: { "200": ok({ type: "object" }), "409": { $ref: "#/components/responses/Error" }, ...errors },
+      }),
+      delete: op("deleteKnowledge", "assistant:write", "Delete an FAQ entry or an article", { parameters: [pathId("id", "kno")], responses: { "200": ok({ type: "object" }), ...errors } }),
     },
     "/assistant/tools": {
       get: op("listAssistantTools", "assistant:write", "Tools the assistant may call", { responses: { "200": ok({ type: "object" }), ...errors } }),
@@ -272,8 +525,13 @@ export const openApiDocument = {
       }),
     },
     "/teammates": {
-      get: op("listTeammates", "conversations:read", "People who can be assigned conversations", {
-        responses: { "200": ok({ type: "object", properties: { items: { type: "array", items: ref("PublicAgent") } } }), ...errors },
+      get: op("listTeammates", "conversations:read", "People who can be assigned conversations, available or away", {
+        responses: { "200": ok({ type: "object", properties: { items: { type: "array", items: ref("Teammate") } } }), ...errors },
+      }),
+    },
+    "/teams": {
+      get: op("listTeams", "conversations:read", "Teams, alphabetical, with members, their load and open counts (managing teams is an owner setting)", {
+        responses: { "200": ok({ type: "object", properties: { items: { type: "array", items: ref("Team") } } }), ...errors },
       }),
     },
     "/conversations": {
@@ -282,6 +540,10 @@ export const openApiDocument = {
           { name: "view", in: "query", schema: { enum: ["mine", "unassigned", "open", "snoozed", "resolved", "all"], default: "open" } },
           { name: "q", in: "query", schema: { type: "string", maxLength: 200 }, description: "Contact name/email or message text" },
           { name: "contactId", in: "query", schema: id("ctc") },
+          { name: "tag", in: "query", schema: id("tag"), description: "Only conversations with this tag" },
+          { name: "team", in: "query", schema: id("tem"), description: "Only conversations in this team" },
+          { name: "priority", in: "query", schema: priority },
+          { name: "sort", in: "query", schema: { enum: ["priority"] }, description: "Urgent, then high, normal, low; newest first within each" },
           { name: "cursor", in: "query", schema: { type: "string" } },
         ],
         responses: { "200": ok(page("Conversation")), ...errors },
@@ -297,7 +559,7 @@ export const openApiDocument = {
         parameters: [pathId("conversationId", "cnv")],
         responses: { "200": ok(ref("Conversation")), ...errors },
       }),
-      patch: op("updateConversation", "conversations:write", "Assign, snooze, resolve or reopen", {
+      patch: op("updateConversation", "conversations:write", "Assign, move to a team, snooze, resolve, reopen, set the priority or custom field values", {
         parameters: [pathId("conversationId", "cnv")],
         requestBody: { content: json(conversationPatch) },
         responses: { "200": ok(ref("Conversation")), ...errors },
@@ -308,7 +570,7 @@ export const openApiDocument = {
         parameters: [pathId("conversationId", "cnv"), { name: "before", in: "query", schema: id("msg") }],
         responses: { "200": ok(page("Message")), ...errors },
       }),
-      post: op("sendMessage", "conversations:write", "Reply to the customer (text) or add an internal note", {
+      post: op("sendMessage", "conversations:write", "Reply to the customer (text) or add an internal note. In email conversations a reply is sent as an email", {
         parameters: [pathId("conversationId", "cnv")],
         requestBody: {
           content: json({
@@ -326,6 +588,45 @@ export const openApiDocument = {
           "201": ok({ type: "object", properties: { conversation: ref("Conversation"), message: ref("Message") } }, "Created"),
           ...errors,
         },
+      }),
+    },
+    "/conversations/{conversationId}/tags": {
+      post: op("tagConversation", "conversations:write", "Add a tag, by id or by name (a missing name is created)", {
+        parameters: [pathId("conversationId", "cnv")],
+        requestBody: {
+          content: json({
+            type: "object",
+            description: "Send tagId or name, not both",
+            properties: { tagId: id("tag"), name: { type: "string", maxLength: 40 }, color: { enum: [...TAG_COLORS] } },
+          }),
+        },
+        responses: { "200": ok(ref("Conversation")), ...errors },
+      }),
+    },
+    "/conversations/{conversationId}/tags/{tagId}": {
+      delete: op("untagConversation", "conversations:write", "Remove a tag", {
+        parameters: [pathId("conversationId", "cnv"), pathId("tagId", "tag")],
+        responses: { "200": ok(ref("Conversation")), ...errors },
+      }),
+    },
+    "/tags": {
+      get: op("listTags", "conversations:read", "Every tag, alphabetical, with how many conversations carry it", {
+        responses: { "200": ok({ type: "object", properties: { items: { type: "array", items: ref("TagWithUsage") } } }), ...errors },
+      }),
+      post: op("createTag", "conversations:write", "Create a tag (renaming and deleting are owner settings)", {
+        requestBody: { content: json(tagInput) },
+        responses: { "201": ok(ref("TagWithUsage"), "Created"), ...errors },
+      }),
+    },
+    "/conversation-fields": {
+      get: op("listConversationFields", "conversations:read", "Custom fields defined by the owners, in display order", {
+        responses: { "200": ok({ type: "object", properties: { items: { type: "array", items: ref("ConversationField") } } }), ...errors },
+      }),
+    },
+    "/conversations/{conversationId}/messages/{messageId}/email": {
+      get: op("getMessageEmail", "conversations:read", "The whole inbound email behind a message (the message body keeps only the new part)", {
+        parameters: [pathId("conversationId", "cnv"), pathId("messageId", "msg")],
+        responses: { "200": ok(ref("EmailOriginal")), ...errors },
       }),
     },
     "/attachments": {
@@ -397,11 +698,143 @@ export const openApiDocument = {
         responses: { "200": ok({ type: "object", properties: { items: { type: "array", items: ref("WebhookDelivery") } } }), ...errors },
       }),
     },
+    "/reports/summary": {
+      get: op("getReportSummary", "reports:read", "Headline numbers for a period, the period just before it, and what is open now", {
+        parameters: reportParameters,
+        responses: {
+          "200": ok({
+            type: "object",
+            properties: {
+              timeZone: { type: "string" },
+              current: reportPeriod,
+              previous: reportPeriod,
+              snapshot: { type: "object", properties: { open: { type: "integer" }, snoozed: { type: "integer" } } },
+            },
+          }),
+          ...errors,
+        },
+      }),
+    },
+    "/reports/volume": {
+      get: op("getReportVolume", "reports:read", "Conversations created and resolved per day, and created per weekday and hour", {
+        parameters: reportParameters,
+        responses: {
+          "200": ok({
+            type: "object",
+            properties: {
+              timeZone: { type: "string" },
+              days: {
+                type: "array",
+                items: { type: "object", properties: { date: { type: "string", format: "date" }, created: { type: "integer" }, resolved: { type: "integer" } } },
+              },
+              busiestHours: {
+                type: "array",
+                description: "7 rows (Monday first) of 24 hourly counts of conversations created, in tz",
+                items: { type: "array", items: { type: "integer" } },
+              },
+            },
+          }),
+          ...errors,
+        },
+      }),
+    },
+    "/reports/teammates": {
+      get: op("getReportTeammates", "reports:read", "Per teammate: assigned, replied, resolved, median first response, satisfaction", {
+        parameters: [...reportParameters, csvParameter],
+        responses: {
+          "200": reportItems({
+            type: "object",
+            properties: {
+              agent: ref("PublicAgent"),
+              assigned: { type: "integer" },
+              replied: { type: "integer" },
+              resolved: { type: "integer" },
+              firstResponseMedian: nullable({ type: "number", description: "ms" }),
+              rated: { type: "integer" },
+              csat: ratio,
+            },
+          }),
+          ...errors,
+        },
+      }),
+    },
+    "/reports/tags": {
+      get: op("getReportTags", "reports:read", "Per tag: conversations created, resolved and their median resolution time", {
+        parameters: [...reportParameters, csvParameter],
+        responses: {
+          "200": reportItems({
+            type: "object",
+            properties: {
+              tag: { type: "object", properties: { id: id("tag"), name: { type: "string" }, color: { enum: [...TAG_COLORS] } } },
+              conversations: { type: "integer" },
+              resolved: { type: "integer" },
+              resolutionMedian: nullable({ type: "number", description: "ms" }),
+            },
+          }),
+          ...errors,
+        },
+      }),
+    },
+    // ---- Session only (dashboard): audit log and single sign-on ----
+    "/audit-log": {
+      get: sessionOp("listAuditLog", "Audit log, newest first (owners and admins)", {
+        parameters: auditFilters([{ name: "cursor", in: "query", schema: { type: "string" } }]),
+        responses: { "200": ok(page("AuditEntry")), ...errors },
+      }),
+    },
+    "/audit-log/export": {
+      get: sessionOp("exportAuditLog", "The newest 10,000 matching entries as CSV (owners and admins)", {
+        parameters: auditFilters([]),
+        responses: { "200": { description: "CSV", content: { "text/csv": { schema: { type: "string" } } } }, ...errors },
+      }),
+    },
+    "/sso": {
+      get: sessionOp("getSso", "Single sign-on settings (owners)", { responses: { "200": ok(ref("SsoSettings")), ...errors } }),
+      put: sessionOp("updateSso", "Change single sign-on settings (owners); clientSecret is write-only", {
+        requestBody: {
+          content: json({
+            type: "object",
+            properties: {
+              enabled: { type: "boolean" },
+              issuer: { type: "string" },
+              clientId: { type: "string" },
+              clientSecret: nullable({ type: "string" }),
+              allowedDomains: { type: "array", items: { type: "string" } },
+              requireSso: { type: "boolean" },
+              createRole: nullable({ enum: ["agent", "viewer"] }),
+            },
+          }),
+        },
+        responses: { "200": ok(ref("SsoSettings")), ...errors },
+      }),
+    },
+    "/sso/test": {
+      post: sessionOp("testSso", "Fetch the provider's discovery document (owners)", {
+        requestBody: { content: json({ type: "object", properties: { issuer: { type: "string" } } }) },
+        responses: { "200": ok({ type: "object" }), ...errors },
+      }),
+    },
+    "/auth/sso/start": {
+      get: {
+        operationId: "ssoStart",
+        summary: "Browser sign-in: redirects to the identity provider (authorization code + PKCE)",
+        security: [],
+        responses: { "302": { description: "To the provider, or to /login?sso_error=<code>" } },
+      },
+    },
+    "/auth/sso/callback": {
+      get: {
+        operationId: "ssoCallback",
+        summary: "The provider's redirect URI: verifies the ID token and starts a session",
+        security: [],
+        responses: { "302": { description: "To the dashboard, or to /login?sso_error=<code>" } },
+      },
+    },
   },
   webhooks: {
     "conversation.created": webhookEvent("conversation.created", {
       type: "object",
-      properties: { conversationId: id("cnv"), contactId: id("ctc"), channel: { type: "string" }, contact: contactSummary },
+      properties: { conversationId: id("cnv"), contactId: id("ctc"), channel: { type: "string" }, contact: contactSummary, ...webhookLabels },
     }),
     "message.created": webhookEvent("message.created", {
       type: "object",
@@ -432,6 +865,7 @@ export const openApiDocument = {
         actor,
         status: { enum: ["open", "snoozed", "resolved"] },
         assigneeId: nullable(id("agt")),
+        ...webhookLabels,
       },
     }),
     "conversation.unread_reply": webhookEvent("conversation.unread_reply", {

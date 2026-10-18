@@ -13,13 +13,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SettingsCard, SettingsPage } from "../settings-page";
 import { PasswordForm } from "./password-form";
+import { NotificationsCard } from "./push/notifications-card";
 
 export function ProfileSection() {
   const { agent } = useBootstrap();
   const qc = useQueryClient();
   const [name, setName] = useState(agent.name);
   const file = useRef<HTMLInputElement>(null);
-  const setAgent = (next: Agent) => qc.setQueryData<Bootstrap>(queryKeys.bootstrap, (b) => (b ? { ...b, agent: next, teammates: b.teammates.map((t) => (t.id === next.id ? { id: next.id, name: next.name, avatarUrl: next.avatarUrl } : t)) } : b));
+  const setAgent = (next: Agent) => qc.setQueryData<Bootstrap>(queryKeys.bootstrap, (b) => (b ? { ...b, agent: next, teammates: b.teammates.map((t) => (t.id === next.id ? { ...t, name: next.name, avatarUrl: next.avatarUrl } : t)) } : b));
   const onError = (e: Error) => toast.error(errorMessage(e, copy.common.somethingWrong));
 
   const rename = useMutation({ mutationFn: () => endpoints.updateMe({ name: name.trim() }), onSuccess: (r) => (setAgent(r.agent), toast.success(copy.profile.updated)), onError });
@@ -61,6 +62,7 @@ export function ProfileSection() {
       <SettingsCard title={copy.profile.password}>
         <PasswordForm />
       </SettingsCard>
+      <NotificationsCard />
     </SettingsPage>
   );
 }

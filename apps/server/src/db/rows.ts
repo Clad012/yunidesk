@@ -1,4 +1,4 @@
-import type { AgentRole, AuthorType, Channel, ConversationStatus, MessageKind } from "yunidesk";
+import type { AgentRole, AssignStrategy, AuthorType, AgentAvailability, Channel, ConversationFieldType, ConversationPriority, ConversationStatus, MessageKind, TagColor } from "yunidesk";
 
 export interface AgentRow {
   id: string;
@@ -12,6 +12,10 @@ export interface AgentRow {
   disabled_at: number | null;
   created_at: number;
   last_seen_at: number | null;
+  /** 'away': never assigned automatically. */
+  availability: AgentAvailability;
+  /** Most open conversations they get automatically; null = no limit. */
+  max_open: number | null;
 }
 
 export interface ContactRow {
@@ -53,6 +57,57 @@ export interface ConversationRow {
   rating_at: number | null;
   ai_state: "active" | "handed_off" | "human" | "off" | null;
   ai_lock_until: number | null;
+  priority: ConversationPriority;
+  /** JSON object of custom field values, keyed by field key. */
+  custom_fields: string;
+  // Report facts (migration 0013), kept up to date on every write.
+  first_contact_message_at: number | null;
+  first_human_reply_at: number | null;
+  human_replied: number;
+  ai_involved: number;
+  reopened_count: number;
+  /** When the away message was last sent (business hours); once per closed period. */
+  away_notified_at: number | null;
+  /** Email conversations: the subject of the first email. */
+  subject: string | null;
+  team_id: string | null;
+}
+
+export interface TeamRow {
+  id: string;
+  name: string;
+  created_at: number;
+  last_assigned_agent_id: string | null;
+  assign_version: string;
+}
+
+export interface AssignmentRuleRow {
+  id: string;
+  position: number;
+  name: string;
+  /** JSON AssignmentConditions. */
+  conditions: string;
+  team_id: string;
+  assign: AssignStrategy;
+  created_at: number;
+}
+
+export interface TagRow {
+  id: string;
+  name: string;
+  color: TagColor;
+  created_at: number;
+}
+
+export interface ConversationFieldRow {
+  id: string;
+  key: string;
+  label: string;
+  type: ConversationFieldType;
+  /** JSON array, select fields only. */
+  options: string | null;
+  position: number;
+  created_at: number;
 }
 
 export interface MessageRow {
@@ -67,6 +122,15 @@ export interface MessageRow {
   created_at: number;
   /** 1 when the AI assistant wrote it. */
   ai: number;
+  // Email channel (all NULL for chat messages).
+  email_direction: "inbound" | "outbound" | null;
+  email_message_id: string | null;
+  email_in_reply_to: string | null;
+  email_status: "pending" | "sent" | "failed" | null;
+  email_error: string | null;
+  email_attempts: number;
+  email_next_attempt_at: number | null;
+  email_verified: number | null;
 }
 
 export interface AttachmentRow {

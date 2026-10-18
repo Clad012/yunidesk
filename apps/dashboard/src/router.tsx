@@ -1,5 +1,6 @@
 import type { QueryClient } from "@tanstack/react-query";
 import { createRootRouteWithContext, createRoute, createRouter, lazyRouteComponent, Outlet, redirect } from "@tanstack/react-router";
+import { CONVERSATION_PRIORITIES, type ConversationPriority } from "yunidesk";
 import { ApiError } from "@/lib/api";
 import { endpoints, INBOX_VIEWS, type InboxView } from "@/lib/endpoints";
 import { queryClient } from "@/lib/query-client";
@@ -14,6 +15,7 @@ import { ConversationEmpty } from "@/features/inbox/conversation/conversation-em
 import { ConversationRoute } from "@/features/inbox/conversation/conversation-route";
 import { SettingsLayout } from "@/features/settings/settings-layout";
 import { SETTINGS_SECTIONS, type SettingsSection } from "@/features/settings/section-names";
+import { parseReportSearch } from "@/features/reports/lib/report-search";
 
 const rootRoute = createRootRouteWithContext<{ queryClient: QueryClient }>()({ component: RootLayout });
 
@@ -24,6 +26,8 @@ const loginRoute = createRoute({
     const status = await endpoints.authStatus().catch(() => ({ needsSetup: false }));
     if (status.needsSetup) throw redirect({ to: "/setup" });
   },
+  validateSearch: (search: Record<string, unknown>): { sso_error?: string } =>
+    typeof search.sso_error === "string" ? { sso_error: search.sso_error } : {},
   component: LoginPage,
 });
 
@@ -65,6 +69,23 @@ const inboxIndexRoute = createRoute({
 
 export interface InboxSearch {
   q?: string;
+  /** Filters, combinable with the view and the search. */
+  tag?: string;
+  team?: string;
+  priority?: ConversationPriority;
+  sort?: "priority";
+}
+
+function parseInboxSearch(search: Record<string, unknown>): InboxSearch {
+  const out: InboxSearch = {};
+  if (typeof search.q === "string" && search.q) out.q = search.q;
+  if (typeof search.tag === "string" && /^tag_[0-9a-z]{26}$/.test(search.tag)) out.tag = search.tag;
+  if (typeof search.team === "string" && /^tem_[0-9a-z]{26}$/.test(search.team)) out.team = search.team;
+  if (typeof search.priority === "string" && (CONVERSATION_PRIORITIES as readonly string[]).includes(search.priority)) {
+    out.priority = search.priority as ConversationPriority;
+  }
+  if (search.sort === "priority") out.sort = "priority";
+  return out;
 }
 
 const inboxRoute = createRoute({
@@ -76,8 +97,7 @@ const inboxRoute = createRoute({
     }),
     stringify: (params: { view: InboxView }) => ({ view: params.view }),
   },
-  validateSearch: (search: Record<string, unknown>): InboxSearch =>
-    typeof search.q === "string" && search.q ? { q: search.q } : {},
+  validateSearch: parseInboxSearch,
   component: InboxPage,
 });
 
@@ -87,6 +107,13 @@ const conversationRoute = createRoute({ getParentRoute: () => inboxRoute, path: 
 const contactsRoute = createRoute({ getParentRoute: () => appRoute, path: "/contacts", component: Outlet });
 const contactsIndexRoute = createRoute({ getParentRoute: () => contactsRoute, path: "/", component: lazyRouteComponent(() => import("@/features/contacts/contacts-page"), "ContactsPage") });
 const contactRoute = createRoute({ getParentRoute: () => contactsRoute, path: "$contactId", component: lazyRouteComponent(() => import("@/features/contacts/contact-page"), "ContactPage") });
+
+const reportsRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/reports",
+  validateSearch: parseReportSearch,
+  component: lazyRouteComponent(() => import("@/features/reports/reports-page"), "ReportsPage"),
+});
 
 const settingsRoute = createRoute({ getParentRoute: () => appRoute, path: "/settings", component: SettingsLayout });
 const settingsIndexRoute = createRoute({
@@ -117,6 +144,7 @@ const routeTree = rootRoute.addChildren([
     inboxIndexRoute,
     inboxRoute.addChildren([inboxEmptyRoute, conversationRoute]),
     contactsRoute.addChildren([contactsIndexRoute, contactRoute]),
+    reportsRoute,
     settingsRoute.addChildren([settingsIndexRoute, settingsSectionRoute]),
   ]),
 ]);

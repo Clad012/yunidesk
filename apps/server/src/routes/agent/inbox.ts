@@ -1,11 +1,12 @@
 import { Hono } from "hono";
 import { z } from "zod";
-import type { AgentConversation, InboxCounts, Page } from "yunidesk";
+import { CONVERSATION_PRIORITIES, type AgentConversation, type EmailAuthResult, type EmailOriginal, type InboxCounts, type Page } from "yunidesk";
 import { limit, publicOrigin, readBody, type AppContext, type AppEnv } from "../../app-env";
 import { getConversation, markRead, postMessage, updateConversation } from "../../db/conversations";
 import type { ConversationRow, MessageRow } from "../../db/rows";
 import { loadAgents, toAgentConversations, toAttachment, toMessages } from "../../db/serialize";
-import { badRequest } from "../../lib/errors";
+import { badRequest, notFound } from "../../lib/errors";
+import { requirePermission } from "../../lib/permissions";
 import { inboxHub } from "../../lib/realtime";
 import { storeUpload } from "../../lib/uploads";
 
@@ -20,7 +21,15 @@ const patchSchema = z.object({
   status: z.enum(["open", "snoozed", "resolved"]).optional(),
   snoozedUntil: z.number().int().positive().nullish(),
   assigneeId: z.string().max(64).nullish(),
+  priority: z.enum(CONVERSATION_PRIORITIES).optional(),
+  customFields: z.record(z.string().max(64), z.unknown()).optional(),
+  teamId: z.string().max(64).nullish(),
 });
+const prioritySchema = z.enum(CONVERSATION_PRIORITIES);
+
+/** urgent > high > normal > low, for ?sort=priority. */
+const PRIORITY_RANK_SQL = `(CASE priority WHEN 'urgent' THEN 3 WHEN 'high' THEN 2 WHEN 'normal' THEN 1 ELSE 0 END)`;
+const PRIORITY_RANK: Record<string, number> = { urgent: 3, high: 2, normal: 1, low: 0 };
 
 const PAGE_SIZE = 30;
 const MESSAGE_PAGE_SIZE = 50;
@@ -91,26 +100,49 @@ inboxRoutes.get("/", async (c) => {
     if (fts) values.push(fts);
   }
 
+  const tag = c.req.query("tag");
+  if (tag) where.push("id IN (SELECT conversation_id FROM conversation_tags WHERE tag_id = ?)"), values.push(tag);
+
+  const team = c.req.query("team");
+  if (team) where.push("team_id = ?"), values.push(team);
+
+  const priority = c.req.query("priority");
+  if (priority) {
+    const parsed = prioritySchema.safeParse(priority);
+    if (!parsed.success) throw badRequest("priority must be low, normal, high or urgent");
+    where.push("priority = ?"), values.push(parsed.data);
+  }
+
+  // Default: newest activity first. sort=priority: urgent first, then high…, newest first within each.
+  const byPriority = c.req.query("sort") === "priority";
   const cursor = c.req.query("cursor");
   if (cursor) {
-    const [at, id] = cursor.split("_");
-    if (!at || !id || !/^\d+$/.test(at)) throw badRequest("Bad cursor");
-    where.push("(last_message_at < ? OR (last_message_at = ? AND id < ?))");
+    const parts = cursor.split("_");
+    const [rank, at, id] = byPriority ? parts : [null, ...parts];
+    if (!at || !id || !/^\d+$/.test(at) || (byPriority && !/^[0-3]$/.test(rank ?? ""))) throw badRequest("Bad cursor");
+    const after = "(last_message_at < ? OR (last_message_at = ? AND id < ?))";
+    if (byPriority) {
+      where.push(`(${PRIORITY_RANK_SQL} < ? OR (${PRIORITY_RANK_SQL} = ? AND ${after}))`);
+      values.push(Number(rank), Number(rank));
+    } else {
+      where.push(after);
+    }
     values.push(Number(at), Number(at), `cnv_${id}`);
   }
 
   const { results } = await c.env.DB.prepare(
     `SELECT * FROM conversations ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
-     ORDER BY last_message_at DESC, id DESC LIMIT ?`,
+     ORDER BY ${byPriority ? `${PRIORITY_RANK_SQL} DESC, ` : ""}last_message_at DESC, id DESC LIMIT ?`,
   )
     .bind(...values, PAGE_SIZE + 1)
     .all<ConversationRow>();
   const page = results.slice(0, PAGE_SIZE);
   const last = page[page.length - 1];
-  return c.json<Page<AgentConversation>>({
-    items: await withOnline(c, page),
-    nextCursor: results.length > PAGE_SIZE && last ? `${last.last_message_at}_${last.id.slice(4)}` : null,
-  });
+  const nextCursor =
+    results.length > PAGE_SIZE && last
+      ? `${byPriority ? `${PRIORITY_RANK[last.priority] ?? 1}_` : ""}${last.last_message_at}_${last.id.slice(4)}`
+      : null;
+  return c.json<Page<AgentConversation>>({ items: await withOnline(c, page), nextCursor });
 });
 
 inboxRoutes.get("/:id", async (c) => {
@@ -142,7 +174,44 @@ inboxRoutes.get("/:id/messages", async (c) => {
   });
 });
 
+interface EmailOriginalRow {
+  message_id: string;
+  from_address: string;
+  from_name: string | null;
+  to_address: string;
+  subject: string | null;
+  sent_at: string | null;
+  text: string;
+  authentication: string | null;
+  skipped_attachments: string | null;
+  email_verified: number | null;
+}
+
+/** "Show full email": the inbound email as received (plain text), with what the receiving server found about the sender. */
+inboxRoutes.get("/:id/messages/:messageId/email", async (c) => {
+  const conversation = await getConversation(c.env, c.req.param("id"));
+  const row = await c.env.DB.prepare(
+    `SELECT o.*, m.email_verified FROM email_originals o JOIN messages m ON m.id = o.message_id
+     WHERE o.message_id = ? AND m.conversation_id = ?`,
+  )
+    .bind(c.req.param("messageId"), conversation.id)
+    .first<EmailOriginalRow>();
+  if (!row) throw notFound("No email for this message");
+  const auth = row.authentication ? (JSON.parse(row.authentication) as Record<"spf" | "dkim" | "dmarc", EmailAuthResult | null>) : null;
+  return c.json<EmailOriginal>({
+    messageId: row.message_id,
+    from: { address: row.from_address, name: row.from_name },
+    to: row.to_address,
+    subject: row.subject,
+    sentAt: row.sent_at,
+    text: row.text,
+    authentication: { spf: auth?.spf ?? null, dkim: auth?.dkim ?? null, dmarc: auth?.dmarc ?? null, verified: row.email_verified === 1 },
+    skippedAttachments: row.skipped_attachments ? (JSON.parse(row.skipped_attachments) as string[]) : [],
+  });
+});
+
 inboxRoutes.post("/:id/messages", async (c) => {
+  requirePermission(c, "inbox.reply");
   const agent = c.get("agent");
   await limit(c.env.WRITE_LIMITER, `agent:${agent.id}`);
   const conversation = await getConversation(c.env, c.req.param("id"));
@@ -161,6 +230,7 @@ inboxRoutes.post("/:id/messages", async (c) => {
 });
 
 inboxRoutes.patch("/:id", async (c) => {
+  requirePermission(c, "inbox.update");
   const conversation = await getConversation(c.env, c.req.param("id"));
   const patch = await readBody(c, patchSchema);
   const updated = await updateConversation(
@@ -173,6 +243,9 @@ inboxRoutes.patch("/:id", async (c) => {
       status: patch.status,
       snoozedUntil: patch.snoozedUntil ?? null,
       assigneeId: patch.assigneeId === undefined ? undefined : patch.assigneeId,
+      priority: patch.priority,
+      customFields: patch.customFields,
+      teamId: patch.teamId === undefined ? undefined : patch.teamId,
     },
   );
   const [result] = await withOnline(c, [updated]);
@@ -180,6 +253,7 @@ inboxRoutes.patch("/:id", async (c) => {
 });
 
 inboxRoutes.post("/:id/read", async (c) => {
+  requirePermission(c, "inbox.update");
   const at = await markRead(c.env, await getConversation(c.env, c.req.param("id")), "agent");
   return c.json({ at });
 });
@@ -187,6 +261,7 @@ inboxRoutes.post("/:id/read", async (c) => {
 export const attachmentRoutes = new Hono<AppEnv>();
 
 attachmentRoutes.post("/", async (c) => {
+  requirePermission(c, "inbox.reply");
   const agent = c.get("agent");
   await limit(c.env.WRITE_LIMITER, `upload:${agent.id}`);
   const row = await storeUpload(c.env, await c.req.formData(), { type: "agent", id: agent.id });

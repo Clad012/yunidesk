@@ -4,6 +4,7 @@ import { KeyboardIcon, LogOutIcon, MonitorIcon, MoonIcon, SunIcon, UserRoundIcon
 import { copy } from "@/lib/copy";
 import { endpoints } from "@/lib/endpoints";
 import { realtime } from "@/lib/realtime/socket";
+import { turnOffPush } from "@/features/push/push-device";
 import { useBootstrap } from "@/hooks/use-bootstrap";
 import { setThemePreference, useTheme, type ThemePreference } from "@/hooks/use-theme";
 import { PersonAvatar } from "@/components/person-avatar";
@@ -18,6 +19,7 @@ import {
   DropdownMenuShortcut,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { AvailabilityItems } from "./availability-items";
 import { shortcutsOpenStore } from "./shortcuts-store";
 
 export function ProfileMenu() {
@@ -27,6 +29,8 @@ export function ProfileMenu() {
   const queryClient = useQueryClient();
 
   const logout = async () => {
+    // A signed-out browser must not keep receiving the team's notifications.
+    await turnOffPush().catch(() => undefined);
     await endpoints.logout().catch(() => undefined);
     realtime.stop();
     queryClient.clear();
@@ -36,13 +40,15 @@ export function ProfileMenu() {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger className="rounded-full outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50" aria-label={copy.nav.profile}>
-        <PersonAvatar name={agent.name} avatarUrl={agent.avatarUrl} seed={agent.id} className="size-9" />
+        <PersonAvatar name={agent.name} avatarUrl={agent.avatarUrl} seed={agent.id} away={agent.availability === "away"} className="size-9" />
       </DropdownMenuTrigger>
       <DropdownMenuContent side="right" align="end" className="w-60">
         <DropdownMenuLabel className="flex flex-col gap-0.5">
           <span className="text-sm font-medium text-foreground">{agent.name}</span>
           <span className="truncate font-normal">{agent.email}</span>
         </DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        <AvailabilityItems />
         <DropdownMenuSeparator />
         <DropdownMenuItem onSelect={() => void navigate({ to: "/settings/$section", params: { section: "profile" } })}>
           <UserRoundIcon /> {copy.nav.profile}

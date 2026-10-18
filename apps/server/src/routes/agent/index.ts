@@ -7,11 +7,22 @@ import { assertTrustedOrigin, requireAgent } from "../../lib/agent-session";
 import { authenticateApiKey, toApiKey, type ApiKeyRow } from "../../lib/api-keys";
 import { forbidden, unauthorized } from "../../lib/errors";
 import { inboxHub } from "../../lib/realtime";
+import { can } from "../../lib/permissions";
 import { getSettings, toAdminSettings } from "../../lib/settings";
 import { apiKeyRoutes } from "./api-keys";
+import { assignmentRoutes, availabilityRoutes } from "./assignment";
+import { teamsRoutes } from "./teams";
+import { toTeammate } from "../../db/teams";
 import { assistantRoutes } from "./assistant";
+import { auditLogRoutes } from "./audit-log";
 import { contactAdminRoutes } from "./contacts";
+import { conversationFieldRoutes } from "./conversation-fields";
+import { emailRoutes } from "./email";
 import { attachmentRoutes, inboxRoutes } from "./inbox";
+import { reportRoutes } from "./reports";
+import { conversationTagRoutes, tagRoutes } from "./tags";
+import { pushRoutes } from "./push";
+import { ssoRoutes } from "./sso";
 import { teamRoutes } from "./team";
 import { webhookEndpointRoutes } from "./webhook-endpoints";
 
@@ -54,12 +65,12 @@ agentRoutes.get("/events", (c) => {
   return c.json({ items: WEBHOOK_EVENT_CATALOG });
 });
 
-/** People who can be assigned conversations. */
+/** People who can be assigned conversations, with whether they are available or away. */
 agentRoutes.get("/teammates", async (c) => {
   const { results } = await c.env.DB.prepare(
     "SELECT * FROM agents WHERE disabled_at IS NULL AND kind = 'human' ORDER BY name",
   ).all<AgentRow>();
-  return c.json({ items: results.map(toPublicAgent) });
+  return c.json({ items: results.map(toTeammate) });
 });
 
 agentRoutes.get("/bootstrap", async (c) => {
@@ -67,7 +78,7 @@ agentRoutes.get("/bootstrap", async (c) => {
   const { results } = await c.env.DB.prepare("SELECT * FROM agents WHERE disabled_at IS NULL AND kind = 'human' ORDER BY name").all<AgentRow>();
   return c.json({
     agent: toAgent(agent),
-    teammates: results.map(toPublicAgent),
+    teammates: results.map(toTeammate),
     settings: toAdminSettings(await getSettings(c.env)),
   });
 });
@@ -80,13 +91,26 @@ agentRoutes.get("/ws", async (c) => {
   const headers = new Headers(c.req.raw.headers);
   headers.set("x-agent", encodeURIComponent(JSON.stringify(toPublicAgent(agent))));
   headers.set("x-agent-session", c.get("sessionHash"));
+  // Viewers watch: their typing signals are dropped.
+  headers.set("x-agent-can-type", can(agent.role, "inbox.reply") ? "1" : "0");
   return inboxHub(c.env).fetch(new Request(c.req.raw.url, { headers }));
 });
 
+agentRoutes.route("/conversations", conversationTagRoutes);
 agentRoutes.route("/conversations", inboxRoutes);
+agentRoutes.route("/tags", tagRoutes);
+agentRoutes.route("/conversation-fields", conversationFieldRoutes);
 agentRoutes.route("/attachments", attachmentRoutes);
 agentRoutes.route("/contacts", contactAdminRoutes);
 agentRoutes.route("/api-keys", apiKeyRoutes);
 agentRoutes.route("/assistant", assistantRoutes);
 agentRoutes.route("/webhook-endpoints", webhookEndpointRoutes);
+agentRoutes.route("/push", pushRoutes);
+agentRoutes.route("/email", emailRoutes);
+agentRoutes.route("/audit-log", auditLogRoutes);
+agentRoutes.route("/sso", ssoRoutes);
+agentRoutes.route("/reports", reportRoutes);
+agentRoutes.route("/teams", teamsRoutes);
+agentRoutes.route("/assignment", assignmentRoutes);
+agentRoutes.route("/me/availability", availabilityRoutes);
 agentRoutes.route("/", teamRoutes);

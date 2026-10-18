@@ -34,6 +34,10 @@ export function conversation(id: string, lastMessageAt: number, patch: Partial<A
     agentLastReadAt: null,
     snoozedUntil: null,
     rating: null,
+    tags: [],
+    priority: "normal",
+    customFields: {},
+    team: null,
     ...patch,
   };
 }

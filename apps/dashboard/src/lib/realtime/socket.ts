@@ -64,8 +64,14 @@ export class RealtimeSocket {
   };
 
   private onVisible = () => {
+    this.sendVisibility();
     if (document.visibilityState === "visible") this.retryNow();
   };
+
+  /** Push notifications skip teammates who have the dashboard on screen. */
+  private sendVisibility(): void {
+    this.send({ type: "visibility", visible: document.visibilityState === "visible" });
+  }
 
   private heartbeat(): void {
     const sentAt = Date.now();
@@ -103,6 +109,7 @@ export class RealtimeSocket {
       if (this.ws !== ws) return;
       this.attempt = 0;
       this.setStatus("open");
+      this.sendVisibility();
       if (this.everOpened) this.emitter.emit("reconnected", undefined);
       this.everOpened = true;
       this.lastFrameAt = Date.now();

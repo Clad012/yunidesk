@@ -1,17 +1,20 @@
 import { Hono } from "hono";
 import { z } from "zod";
-import type { CannedResponse, Invite } from "yunidesk";
+import { AGENT_ROLES, type AgentRole, type CannedResponse, type Invite } from "yunidesk";
 import { publicOrigin, readBody, type AppEnv } from "../../app-env";
 import type { AgentRow } from "../../db/rows";
 import { toAgent } from "../../db/serialize";
 import { hashPassword, randomToken, sha256, verifyPassword } from "../../lib/crypto";
+import { audit, changedKeys } from "../../lib/audit";
 import { badRequest, conflict, forbidden, notFound } from "../../lib/errors";
 import { newId } from "../../lib/ids";
-import { requireOwner, startAgentSession } from "../../lib/agent-session";
+import { startAgentSession } from "../../lib/agent-session";
+import { can, checkMemberChange, refusalError, requirePermission } from "../../lib/permissions";
 import { getSettings, isOrigin, saveSettings, toAdminSettings } from "../../lib/settings";
 import { inboxHub } from "../../lib/realtime";
 import { matchesSignature } from "../../lib/uploads";
 import { isAllowedWebhookUrl } from "../../lib/webhooks";
+import { awayMessageSchema, businessHoursSchema } from "../../lib/business-hours";
 import { passwordSchema } from "../agent-auth";
 
 const INVITE_DAYS = 7;
@@ -21,8 +24,8 @@ const profileSchema = z.object({
   currentPassword: z.string().max(200).optional(),
   newPassword: passwordSchema.optional(),
 });
-const inviteSchema = z.object({ email: z.email().max(254), role: z.enum(["owner", "agent"]).default("agent") });
-const memberPatchSchema = z.object({ role: z.enum(["owner", "agent"]).optional(), disabled: z.boolean().optional() });
+const inviteSchema = z.object({ email: z.email().max(254), role: z.enum(AGENT_ROLES).default("agent") });
+const memberPatchSchema = z.object({ role: z.enum(AGENT_ROLES).optional(), disabled: z.boolean().optional() });
 const localized = z.object({ en: z.string().max(200).optional(), fr: z.string().max(200).optional() });
 const settingsSchema = z.object({
   teamName: z.string().trim().min(1).max(60).optional(),
@@ -36,6 +39,16 @@ const settingsSchema = z.object({
   allowedOrigins: z.array(z.string().max(200).refine(isOrigin, "Use an origin like https://example.com")).max(20).optional(),
   webhookUrl: z.url({ protocol: /^https$/ }).max(500).nullable().optional(),
   retentionDays: z.number().int().min(30).max(3650).optional(),
+  businessHours: businessHoursSchema.optional(),
+  awayMessage: awayMessageSchema.optional(),
+  helpCenter: z
+    .object({
+      enabled: z.boolean(),
+      title: z.object({ en: z.string().trim().max(80).optional(), fr: z.string().trim().max(80).optional() }),
+      description: z.object({ en: z.string().trim().max(300).optional(), fr: z.string().trim().max(300).optional() }).optional(),
+    })
+    .optional(),
+  auditRetentionDays: z.number().int().min(30).max(3650).optional(),
 });
 const cannedSchema = z.object({
   shortcut: z.string().trim().min(1).max(40).regex(/^[\w-]+$/, "Letters, numbers, - and _ only"),
@@ -62,6 +75,7 @@ teamRoutes.patch("/me", async (c) => {
     // Live dashboard sockets from the old sessions go too; this tab reconnects with its new cookie.
     await inboxHub(c.env).disconnectAgent(agent.id);
     await startAgentSession(c, agent.id);
+    audit(c, "profile.password_changed", { type: "agent", id: agent.id });
   }
   if (input.name) await c.env.DB.prepare("UPDATE agents SET name = ? WHERE id = ?").bind(input.name, agent.id).run();
   const updated = await c.env.DB.prepare("SELECT * FROM agents WHERE id = ?").bind(agent.id).first<AgentRow>();
@@ -95,12 +109,12 @@ teamRoutes.get("/team", async (c) => {
   const agent = c.get("agent");
   const { results } = await c.env.DB.prepare("SELECT * FROM agents WHERE kind = 'human' ORDER BY created_at").all<AgentRow>();
   let invites: Invite[] = [];
-  if (agent.role === "owner") {
+  if (can(agent.role, "team.manage")) {
     const rows = await c.env.DB.prepare(
       "SELECT id, email, role, created_at, expires_at FROM agent_invites WHERE accepted_at IS NULL AND expires_at > ? ORDER BY created_at DESC",
     )
       .bind(Date.now())
-      .all<{ id: string; email: string; role: "owner" | "agent"; created_at: number; expires_at: number }>();
+      .all<{ id: string; email: string; role: AgentRole; created_at: number; expires_at: number }>();
     invites = rows.results.map((r) => ({ id: r.id, email: r.email, role: r.role, createdAt: r.created_at, expiresAt: r.expires_at }));
   }
   return c.json({
@@ -111,8 +125,9 @@ teamRoutes.get("/team", async (c) => {
 
 teamRoutes.post("/team/invites", async (c) => {
   const agent = c.get("agent");
-  requireOwner(agent);
+  requirePermission(c, "team.manage");
   const input = await readBody(c, inviteSchema);
+  if (input.role === "owner") requirePermission(c, "team.manageOwners");
   const email = input.email.toLowerCase();
   if (await c.env.DB.prepare("SELECT 1 FROM agents WHERE email = ?").bind(email).first()) {
     throw conflict("This person is already on the team");
@@ -125,31 +140,44 @@ teamRoutes.post("/team/invites", async (c) => {
   )
     .bind(id, await sha256(token), email, input.role, agent.id, now, now + INVITE_DAYS * 24 * 3600 * 1000)
     .run();
+  audit(c, "team.invite_created", { type: "invite", id }, { email, role: input.role });
   // The link is shown once; only its hash is stored.
   return c.json({ id, url: `${publicOrigin(c)}/invite/${token}` }, 201);
 });
 
 teamRoutes.delete("/team/invites/:id", async (c) => {
-  requireOwner(c.get("agent"));
-  await c.env.DB.prepare("DELETE FROM agent_invites WHERE id = ?").bind(c.req.param("id")).run();
+  requirePermission(c, "team.manage");
+  const invite = await c.env.DB.prepare("SELECT id, email, role FROM agent_invites WHERE id = ?")
+    .bind(c.req.param("id"))
+    .first<{ id: string; email: string; role: AgentRole }>();
+  if (invite) {
+    if (invite.role === "owner") requirePermission(c, "team.manageOwners");
+    await c.env.DB.prepare("DELETE FROM agent_invites WHERE id = ?").bind(invite.id).run();
+    audit(c, "team.invite_revoked", { type: "invite", id: invite.id }, { email: invite.email, role: invite.role });
+  }
   return c.json({ ok: true });
 });
 
 teamRoutes.patch("/team/:id", async (c) => {
   const me = c.get("agent");
-  requireOwner(me);
+  requirePermission(c, "team.manage");
   const input = await readBody(c, memberPatchSchema);
   const target = await c.env.DB.prepare("SELECT * FROM agents WHERE id = ? AND kind = 'human'").bind(c.req.param("id")).first<AgentRow>();
   if (!target) throw notFound("Teammate not found");
-  const losesOwner = target.role === "owner" && (input.role === "agent" || input.disabled === true);
-  if (losesOwner) {
-    const owners = await c.env.DB.prepare(
-      "SELECT COUNT(*) AS n FROM agents WHERE role = 'owner' AND disabled_at IS NULL",
-    ).first<{ n: number }>();
-    if ((owners?.n ?? 0) <= 1) throw badRequest("The team needs at least one owner");
-  }
+  const owners = await c.env.DB.prepare(
+    "SELECT COUNT(*) AS n FROM agents WHERE role = 'owner' AND disabled_at IS NULL AND kind = 'human'",
+  ).first<{ n: number }>();
+  const refusal = checkMemberChange(
+    { id: me.id, role: me.role },
+    { id: target.id, role: target.role, disabled: target.disabled_at !== null },
+    input,
+    owners?.n ?? 0,
+  );
+  if (refusal) throw refusalError(refusal);
+
+  const roleChanges = input.role !== undefined && input.role !== target.role;
   const statements: D1PreparedStatement[] = [];
-  if (input.role) statements.push(c.env.DB.prepare("UPDATE agents SET role = ? WHERE id = ?").bind(input.role, target.id));
+  if (roleChanges) statements.push(c.env.DB.prepare("UPDATE agents SET role = ? WHERE id = ?").bind(input.role, target.id));
   if (input.disabled !== undefined) {
     statements.push(
       c.env.DB.prepare("UPDATE agents SET disabled_at = ? WHERE id = ?").bind(input.disabled ? Date.now() : null, target.id),
@@ -164,12 +192,25 @@ teamRoutes.patch("/team/:id", async (c) => {
       );
     }
   }
-  if (input.role === "agent" && target.role === "owner") {
-    // Invites an owner sent shouldn't outlive their owner rights.
-    statements.push(c.env.DB.prepare("DELETE FROM agent_invites WHERE created_by = ? AND accepted_at IS NULL").bind(target.id));
+  if (roleChanges) {
+    // Invites shouldn't outlive the rights of whoever sent them.
+    const next = input.role!;
+    if (!can(next, "team.manage")) {
+      statements.push(c.env.DB.prepare("DELETE FROM agent_invites WHERE created_by = ? AND accepted_at IS NULL").bind(target.id));
+    } else if (!can(next, "team.manageOwners")) {
+      statements.push(
+        c.env.DB.prepare("DELETE FROM agent_invites WHERE created_by = ? AND accepted_at IS NULL AND role = 'owner'").bind(target.id),
+      );
+    }
   }
   if (statements.length) await c.env.DB.batch(statements);
-  if (input.disabled) await inboxHub(c.env).disconnectAgent(target.id);
+  // Open dashboards reconnect, and pick up the new rights (or none, when disabled).
+  if (input.disabled || roleChanges) await inboxHub(c.env).disconnectAgent(target.id);
+
+  const subject = { type: "agent", id: target.id };
+  if (roleChanges) audit(c, "team.role_changed", subject, { name: target.name, from: target.role, to: input.role });
+  if (input.disabled === true && target.disabled_at === null) audit(c, "team.disabled", subject, { name: target.name });
+  if (input.disabled === false && target.disabled_at !== null) audit(c, "team.enabled", subject, { name: target.name });
   const updated = await c.env.DB.prepare("SELECT * FROM agents WHERE id = ?").bind(target.id).first<AgentRow>();
   return c.json({ ...toAgent(updated!), disabled: updated!.disabled_at !== null });
 });
@@ -179,20 +220,24 @@ teamRoutes.patch("/team/:id", async (c) => {
 teamRoutes.get("/settings", async (c) => c.json(toAdminSettings(await getSettings(c.env))));
 
 teamRoutes.put("/settings", async (c) => {
-  requireOwner(c.get("agent"));
+  requirePermission(c, "settings.manage");
   const patch = await readBody(c, settingsSchema);
   if (patch.webhookUrl && !isAllowedWebhookUrl(patch.webhookUrl, new URL(c.req.url).hostname)) {
     throw badRequest("Use a public https URL for webhooks");
   }
+  const before = await getSettings(c.env);
   const saved = await saveSettings(c.env, Object.fromEntries(Object.entries(patch).filter(([, v]) => v !== undefined)));
+  const keys = changedKeys(before, patch);
+  if (keys.length) audit(c, "settings.updated", { type: "settings", id: "workspace" }, { keys });
   return c.json(toAdminSettings(saved));
 });
 
 /** Generates a new webhook signing secret. It is returned once. */
 teamRoutes.post("/settings/webhook-secret", async (c) => {
-  requireOwner(c.get("agent"));
+  requirePermission(c, "settings.manage");
   const secret = `whsec_${randomToken(32)}`;
   await saveSettings(c.env, { webhookSecret: secret });
+  audit(c, "settings.webhook_secret_rolled", { type: "settings", id: "webhook" });
   return c.json({ secret });
 });
 
@@ -220,6 +265,7 @@ teamRoutes.get("/canned-responses", async (c) => {
 });
 
 teamRoutes.post("/canned-responses", async (c) => {
+  requirePermission(c, "savedReplies.manage");
   const input = await readBody(c, cannedSchema);
   const id = newId("cnd");
   try {
@@ -233,10 +279,12 @@ teamRoutes.post("/canned-responses", async (c) => {
     throw error;
   }
   const row = await c.env.DB.prepare("SELECT * FROM canned_responses WHERE id = ?").bind(id).first<CannedRow>();
+  audit(c, "saved_reply.created", { type: "saved_reply", id }, { shortcut: input.shortcut });
   return c.json(toCanned(row!), 201);
 });
 
 teamRoutes.put("/canned-responses/:id", async (c) => {
+  requirePermission(c, "savedReplies.manage");
   const input = await readBody(c, cannedSchema);
   const row = await c.env.DB.prepare(
     "UPDATE canned_responses SET shortcut = ?, title = ?, body = ? WHERE id = ? RETURNING *",
@@ -244,10 +292,15 @@ teamRoutes.put("/canned-responses/:id", async (c) => {
     .bind(input.shortcut, input.title, input.body, c.req.param("id"))
     .first<CannedRow>();
   if (!row) throw notFound("Saved reply not found");
+  audit(c, "saved_reply.updated", { type: "saved_reply", id: row.id }, { shortcut: row.shortcut });
   return c.json(toCanned(row));
 });
 
 teamRoutes.delete("/canned-responses/:id", async (c) => {
-  await c.env.DB.prepare("DELETE FROM canned_responses WHERE id = ?").bind(c.req.param("id")).run();
+  requirePermission(c, "savedReplies.manage");
+  const row = await c.env.DB.prepare("DELETE FROM canned_responses WHERE id = ? RETURNING id, shortcut")
+    .bind(c.req.param("id"))
+    .first<{ id: string; shortcut: string }>();
+  if (row) audit(c, "saved_reply.deleted", { type: "saved_reply", id: row.id }, { shortcut: row.shortcut });
   return c.json({ ok: true });
 });

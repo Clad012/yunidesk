@@ -5,6 +5,7 @@ import { playChime } from "@/lib/chime";
 import { realtime } from "@/lib/realtime/socket";
 import { useStore } from "@/lib/realtime/store";
 import { contactLabel } from "@/features/inbox/lib/labels";
+import { pushEndpointStore } from "@/features/push/push-device";
 import { activeConversationStore, markSeen, markUnseen, needsAttention, unseenStore } from "./attention";
 
 /** Sound, browser notification and tab-title count for new contact messages. Mount once in the shell. */
@@ -31,7 +32,8 @@ export function useAttention(): void {
       if (!needsAttention(id, activeConversationStore.get(), document.hidden)) return;
       markUnseen(id);
       playChime();
-      if ("Notification" in window && Notification.permission === "granted") {
+      // With push on for this device, the service worker shows it (once, per the teammate's choices).
+      if ("Notification" in window && Notification.permission === "granted" && !pushEndpointStore.get()) {
         const notification = new Notification(fmt(copy.notifications.newMessage, { name: contactLabel(event.conversation.contact) }), {
           body: event.message.body || copy.list.attachment,
           tag: id,

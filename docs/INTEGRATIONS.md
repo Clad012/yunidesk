@@ -9,7 +9,7 @@ The full API is described in OpenAPI 3.1 at `https://<your-yunidesk>/api/openapi
 
 ## API keys
 
-Create one in **Settings → API keys** (owners only). Pick a name, the name shown on its replies, its scopes and an expiry. The key is shown **once**; Yunidesk stores only its SHA-256 hash.
+Create one in **Settings → API keys** (owners and admins). Pick a name, the name shown on its replies, its scopes and an expiry. The key is shown **once**; Yunidesk stores only its SHA-256 hash.
 
 ```
 Authorization: Bearer ydk_3f9k2m…
@@ -24,14 +24,21 @@ Authorization: Bearer ydk_3f9k2m…
 
 | Scope | Allows |
 |---|---|
-| `conversations:read` | `GET /key`, `/teammates`, `/conversations`, `/conversations/counts`, `/conversations/:id`, `/conversations/:id/messages` |
-| `conversations:write` | `POST /conversations/:id/messages` (reply or note), `PATCH /conversations/:id` (status, snooze, assignee), `POST /attachments` |
+| `conversations:read` | `GET /key`, `/teammates`, `/conversations`, `/conversations/counts`, `/conversations/:id`, `/conversations/:id/messages`, `/conversations/:id/messages/:messageId/email` (the whole inbound email), `/tags`, `/conversation-fields`, `/teams` |
+| `conversations:write` | `POST /conversations/:id/messages` (reply or note; in an email conversation the reply is sent as an email), `PATCH /conversations/:id` (status, snooze, assignee, team, priority, custom field values), `POST /conversations/:id/tags`, `DELETE /conversations/:id/tags/:tagId`, `POST /tags`, `POST /attachments` |
 | `contacts:read` | `GET /contacts`, `/contacts/:id` |
 | `webhooks:write` | `/webhook-endpoints` (only the endpoints this key created) |
+| `reports:read` | `GET /reports/summary`, `/reports/volume`, `/reports/teammates`, `/reports/tags` (`?from=&to=&tz=&channel=&tagId=&assigneeId=`; the tables also as `format=csv`) |
 
 `GET /key` and `GET /events` work with any valid key. `GET /events` lists every event the server sends, with names and descriptions in English and French and the fields each carries (dotted paths inside `data`), so an integration can build its trigger list from it and offer new events without shipping anything. It returns the key, its bot and the workspace name, so you can check a key when someone connects it.
 
 All paths are under `/api/agent`. Errors look like `{ "error": { "code", "message" } }`.
+
+**Tags, priority and custom fields** are team-only: customers never see them, in the messenger or the app SDK. Tag a conversation by name in one call (`POST /conversations/:id/tags { "name": "billing" }` creates the tag when missing), filter with `GET /conversations?tag=&priority=&sort=priority`, and set values with `PATCH /conversations/:id { "priority": "urgent", "customFields": { "plan": "pro", "order_id": null } }` (merged; `null` clears; unknown keys and values that don't fit the field are refused). Renaming or deleting tags and defining fields are owner settings, never available to a key. `conversation.created` and `conversation.updated` webhooks carry `priority`, `tags` (names) and `customFields`.
+
+**Reports** (`reports:read`) return the dashboard's numbers for a period: `yunidesk.reports.summary({ from: "2026-10-01", to: "2026-10-31", tz: "Europe/Paris" })`, and `volume`, `teammates`, `tags` with the same query. Durations are in milliseconds. See [ARCHITECTURE.md](ARCHITECTURE.md#reports) for what each number counts.
+
+**Teams** are team-only too. `GET /teams` lists them with their members (each `available` or `away`, with their open load) and open counts; `GET /conversations?team=<id>` filters; `PATCH /conversations/:id { "teamId": "tem_…" }` moves a conversation (null takes it out; the assignee stays). Creating teams, membership, the assignment rules, limits and availability are dashboard settings, never available to a key. Rules run when a conversation is created (unless the AI assistant takes it) and when the assistant hands off, so a tag you add while the assistant answers can route the conversation; a tag added after `conversation.created` on a conversation going straight to people comes too late for the rules. Conversation webhooks carry `teamId` and `team`.
 
 ### Typed client
 
@@ -72,7 +79,7 @@ and these headers: `X-Yunidesk-Event`, `X-Yunidesk-Event-Id`, `X-Yunidesk-Delive
 |---|---|
 | `conversation.created` | A customer starts a conversation |
 | `message.created` | A message visible to the customer (not notes). `data.actor` says who wrote it (`contact`, `agent`, `bot`, `system`). Ignore your own bot's messages |
-| `conversation.updated` | Status or assignee changed |
+| `conversation.updated` | Status, assignee, team, priority, tags or custom fields changed |
 | `conversation.unread_reply` | A team reply is still unread after 2 minutes (send your push notification here) |
 | `conversation.rated` | The customer rated a resolved conversation |
 | `ping` | "Send test event" |
@@ -104,9 +111,9 @@ The signature is HMAC-SHA256 of `"<t>.<raw body>"`. Deliveries more than 5 minut
 An assistant can answer customers first, from your knowledge and your tools, before the team does. Configure it in **Settings → Assistant** or with a key that has `assistant:write` (`yunidesk.assistant.*` in `yunidesk/api`).
 
 - **Model:** any OpenRouter model, `z-ai/glm-5.3-flash` by default. Set your OpenRouter key from your server or the dashboard. It is checked with OpenRouter, stored encrypted and never returned. **Never put it in a website or an app**, and give it a credit limit at openrouter.ai.
-- **Knowledge:** FAQ entries and articles. For each question, the best matches (full-text search) are given to the model. FAQ entries are also listed, with a search box, in the Help section of the messenger's Home screen; articles are read by the assistant only. Give an entry a language (`locale`: `en` or `fr`) to show it only to customers using that language; without one it shows to everyone. Everything you add can be quoted to any customer, so never put secrets in it.
+- **Knowledge:** FAQ entries and articles. For each question, the best matches (full-text search) are given to the model. FAQ entries are also listed, with a search box, in the Help section of the messenger's Home screen; articles are read by the assistant only. Give an entry a language (`locale`: `en` or `fr`) to show it only to customers using that language; without one it shows to everyone. Everything you add can be quoted to any customer, so never put secrets in it. Items marked `published` also get a public page in the help center (`/help/<locale>/<slug>`, see [ARCHITECTURE.md](ARCHITECTURE.md#help-center)); set `slug`, `category`, `position` and `translationOf` (the id of the item it translates) on create or `PATCH /assistant/knowledge/:id`.
 - **Tools:** a name, a description, a JSON schema and an https URL on your server. Yunidesk POSTs `{ id, tool, arguments, conversationId, contact, createdAt }`, signed like webhooks with the tools' secret (`POST /assistant/tools/roll-secret`, verify with `verifyWebhookSignature`). `contact.externalId` is your user id when the customer was identified with a signed token. Trust it only when `contact.isIdentified` is true. Answer JSON within 8 seconds.
-- **In the messenger:** replies stream in live. Every AI message is labelled and has a **Talk to a human** button, which hands the conversation to the team (it shows as a marker on both sides). A teammate's reply also takes over.
+- **In the messenger:** replies stream in live. Every AI message is labelled and has a **Talk to a human** button, which hands the conversation to the team (it shows as a marker on both sides). A teammate's reply also takes over. Outside business hours (Settings → Business hours) the hand-off marker says when the team is back; conversations the assistant doesn't answer get the away message instead (an `away` event in `GET /conversations/{id}/messages`).
 - **Limits:**
   - 6 replies a minute per customer, and per IP for anonymous visitors.
   - 40 replies a day per customer.

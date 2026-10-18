@@ -1,13 +1,14 @@
 import { Link } from "@tanstack/react-router";
-import { InboxIcon, SettingsIcon, UsersIcon, type LucideIcon } from "lucide-react";
+import { ChartColumnIcon, InboxIcon, SettingsIcon, UsersIcon, type LucideIcon } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { copy } from "@/lib/copy";
 import { endpoints, queryKeys } from "@/lib/endpoints";
 import { Tip } from "@/components/ui/tooltip";
 import { ConnectionDot } from "./connection-dot";
 import { ProfileMenu } from "./profile-menu";
+import { useCan } from "@/hooks/use-bootstrap";
 
-function RailLink({ to, label, icon: Icon, badge }: { to: "/inbox" | "/contacts" | "/settings"; label: string; icon: LucideIcon; badge?: number }) {
+function RailLink({ to, label, icon: Icon, badge }: { to: "/inbox" | "/contacts" | "/reports" | "/settings"; label: string; icon: LucideIcon; badge?: number }) {
   return (
     <Tip label={label} side="right">
       <Link
@@ -28,6 +29,7 @@ function RailLink({ to, label, icon: Icon, badge }: { to: "/inbox" | "/contacts"
 
 export function NavRail() {
   const counts = useQuery({ queryKey: queryKeys.counts, queryFn: endpoints.counts });
+  const canSeeReports = useCan("reports.view");
   return (
     <nav className="flex w-16 shrink-0 flex-col items-center gap-1.5 py-3">
       <Link to="/inbox" className="mb-3 flex size-9 items-center justify-center rounded-xl shadow-sm" aria-label={copy.appName}>
@@ -35,6 +37,7 @@ export function NavRail() {
       </Link>
       <RailLink to="/inbox" label={copy.nav.inbox} icon={InboxIcon} badge={counts.data?.mine} />
       <RailLink to="/contacts" label={copy.nav.contacts} icon={UsersIcon} />
+      {canSeeReports ? <RailLink to="/reports" label={copy.nav.reports} icon={ChartColumnIcon} /> : null}
       <RailLink to="/settings" label={copy.nav.settings} icon={SettingsIcon} />
       <div className="mt-auto flex flex-col items-center gap-2">
         <ConnectionDot />

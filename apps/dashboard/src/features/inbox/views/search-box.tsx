@@ -9,7 +9,7 @@ import { useInboxParams } from "../lib/use-inbox-params";
 
 /** Server-side search; the query lives in the URL (?q=). */
 export function SearchBox() {
-  const { view, q } = useInboxParams();
+  const { view, q, filters } = useInboxParams();
   const navigate = useNavigate();
   const [value, setValue] = useState(q);
   const debounced = useDebouncedValue(value.trim(), 300);
@@ -19,7 +19,7 @@ export function SearchBox() {
 
   useEffect(() => {
     if (debounced === q) return;
-    void navigate({ to: "/inbox/$view", params: { view }, search: debounced ? { q: debounced } : {}, replace: true });
+    void navigate({ to: "/inbox/$view", params: { view }, search: debounced ? { ...filters, q: debounced } : filters, replace: true });
     // Only react to the typed value; navigating changes q.
   }, [debounced]);
 

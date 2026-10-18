@@ -119,8 +119,20 @@ const KEY_ROUTES: { method: string; path: RegExp; scope: ApiScope | null }[] = [
   { method: "GET", path: new RegExp(`^/conversations/${ID}$`), scope: "conversations:read" },
   { method: "GET", path: new RegExp(`^/conversations/${ID}/messages$`), scope: "conversations:read" },
   { method: "POST", path: new RegExp(`^/conversations/${ID}/messages$`), scope: "conversations:write" },
+  // Email channel: the full inbound email behind a message. (Settings → Email at /email is session only.)
+  { method: "GET", path: new RegExp(`^/conversations/${ID}/messages/${ID}/email$`), scope: "conversations:read" },
   { method: "PATCH", path: new RegExp(`^/conversations/${ID}$`), scope: "conversations:write" },
   { method: "POST", path: /^\/attachments$/, scope: "conversations:write" },
+  // Tags, priority and custom fields (priority and values go through PATCH /conversations/:id).
+  // Renaming/deleting tags and defining fields are owner settings: session only.
+  { method: "GET", path: /^\/tags$/, scope: "conversations:read" },
+  { method: "POST", path: /^\/tags$/, scope: "conversations:write" },
+  { method: "POST", path: new RegExp(`^/conversations/${ID}/tags$`), scope: "conversations:write" },
+  { method: "DELETE", path: new RegExp(`^/conversations/${ID}/tags/${ID}$`), scope: "conversations:write" },
+  { method: "GET", path: /^\/conversation-fields$/, scope: "conversations:read" },
+  // Teams: readable with conversations:read; moving a conversation is PATCH /conversations/:id { teamId }.
+  // Managing teams, the assignment rules, capacities and availability are session only.
+  { method: "GET", path: /^\/teams$/, scope: "conversations:read" },
   { method: "GET", path: /^\/contacts$/, scope: "contacts:read" },
   { method: "GET", path: new RegExp(`^/contacts/${ID}$`), scope: "contacts:read" },
   { method: "GET", path: /^\/assistant$/, scope: "assistant:write" },
@@ -146,6 +158,9 @@ const KEY_ROUTES: { method: string; path: RegExp; scope: ApiScope | null }[] = [
   { method: "POST", path: new RegExp(`^/webhook-endpoints/${ID}/roll-secret$`), scope: "webhooks:write" },
   { method: "POST", path: new RegExp(`^/webhook-endpoints/${ID}/test$`), scope: "webhooks:write" },
   { method: "GET", path: new RegExp(`^/webhook-endpoints/${ID}/deliveries$`), scope: "webhooks:write" },
+  // Reports (read only).
+  { method: "GET", path: /^\/reports\/(summary|volume|teammates|tags)$/, scope: "reports:read" },
+  // Deliberately session only: /audit-log (owners, admins) and /sso (owners).
 ];
 
 /**

@@ -12,9 +12,20 @@ import type {
   AgentSendMessageInput,
   ApiKey,
   Contact,
+  ConversationField,
+  ConversationPriority,
+  CustomFieldValue,
   Message,
   Page,
-  PublicAgent,
+  ReportQuery,
+  ReportSummary,
+  ReportTagRow,
+  ReportTeammateRow,
+  ReportVolume,
+  TagColor,
+  TagWithUsage,
+  Team,
+  Teammate,
   WebhookDelivery,
   WebhookEndpoint,
   WebhookEndpointWithSecret,
@@ -50,6 +61,12 @@ export interface ConversationPatch {
   snoozedUntil?: number | null;
   /** A teammate id from `teammates()`, or null to unassign. */
   assigneeId?: string | null;
+  /** Team only; adds an internal timeline event. */
+  priority?: ConversationPriority;
+  /** Merged into the stored values; null clears one. Keys come from `conversationFields.list()`. */
+  customFields?: Record<string, CustomFieldValue | null>;
+  /** A team id from `teams.list()`, or null to take it out of its team. The assignee stays. */
+  teamId?: string | null;
 }
 
 export interface WebhookEndpointInput {
@@ -111,13 +128,26 @@ export function createYunideskApi(options: YunideskApiOptions) {
   return {
     /** The key itself, its bot and the workspace name. Use it to check a key when connecting. */
     key: () => call<{ apiKey: ApiKey; workspace: { name: string } }>("GET", "/key"),
-    teammates: () => call<{ items: PublicAgent[] }>("GET", "/teammates"),
+    teammates: () => call<{ items: Teammate[] }>("GET", "/teammates"),
     /** Every event this server sends, with names in en/fr and the fields each carries. */
     events: { list: () => call<{ items: WebhookEventDescriptor[] }>("GET", "/events") },
 
     conversations: {
-      list: (params: { view?: ConversationView; q?: string; cursor?: string; contactId?: string } = {}) =>
-        call<Page<AgentConversation>>("GET", `/conversations${query(params)}`),
+      list: (
+        params: {
+          view?: ConversationView;
+          q?: string;
+          cursor?: string;
+          contactId?: string;
+          /** A tag id: only conversations carrying it. */
+          tag?: string;
+          /** A team id: only conversations in that team. */
+          team?: string;
+          priority?: ConversationPriority;
+          /** "priority": urgent first, newest first within each priority. */
+          sort?: "priority";
+        } = {},
+      ) => call<Page<AgentConversation>>("GET", `/conversations${query(params)}`),
       get: (conversationId: string) => call<AgentConversation>("GET", `/conversations/${id(conversationId)}`),
       /** Oldest to newest; `nextCursor` points at an older page. Includes notes and events. */
       messages: (conversationId: string, params: { before?: string } = {}) =>
@@ -130,6 +160,27 @@ export function createYunideskApi(options: YunideskApiOptions) {
         }),
       update: (conversationId: string, patch: ConversationPatch) =>
         call<AgentConversation>("PATCH", `/conversations/${id(conversationId)}`, patch),
+      /** Adds a tag by id, or by name (created when missing). Team only. */
+      addTag: (conversationId: string, tag: { tagId: string } | { name: string; color?: TagColor }) =>
+        call<AgentConversation>("POST", `/conversations/${id(conversationId)}/tags`, tag),
+      removeTag: (conversationId: string, tagId: string) =>
+        call<AgentConversation>("DELETE", `/conversations/${id(conversationId)}/tags/${id(tagId)}`),
+    },
+
+    /** Tags (scope conversations:read to list, conversations:write to create). Renaming and deleting are owner settings. */
+    tags: {
+      list: () => call<{ items: TagWithUsage[] }>("GET", "/tags"),
+      create: (input: { name: string; color?: TagColor }) => call<TagWithUsage>("POST", "/tags", input),
+    },
+
+    /** Teams with their members and open counts (scope conversations:read). Move a conversation with `conversations.update({ teamId })`. */
+    teams: {
+      list: () => call<{ items: Team[] }>("GET", "/teams"),
+    },
+
+    /** Custom fields the owners defined (values are set with `conversations.update`). */
+    conversationFields: {
+      list: () => call<{ items: ConversationField[] }>("GET", "/conversation-fields"),
     },
 
     contacts: {
@@ -177,6 +228,14 @@ export function createYunideskApi(options: YunideskApiOptions) {
       test: (endpointId: string) => call<WebhookDelivery>("POST", `/webhook-endpoints/${id(endpointId)}/test`),
       deliveries: (endpointId: string) =>
         call<{ items: WebhookDelivery[] }>("GET", `/webhook-endpoints/${id(endpointId)}/deliveries`),
+    },
+
+    /** Reports (scope reports:read). Days are counted in `tz` (default UTC). */
+    reports: {
+      summary: (params: ReportQuery) => call<ReportSummary>("GET", `/reports/summary${query({ ...params })}`),
+      volume: (params: ReportQuery) => call<ReportVolume>("GET", `/reports/volume${query({ ...params })}`),
+      teammates: (params: ReportQuery) => call<{ items: ReportTeammateRow[] }>("GET", `/reports/teammates${query({ ...params })}`),
+      tags: (params: ReportQuery) => call<{ items: ReportTagRow[] }>("GET", `/reports/tags${query({ ...params })}`),
     },
   };
 }

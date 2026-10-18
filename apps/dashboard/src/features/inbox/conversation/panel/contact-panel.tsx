@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import type { AgentConversation } from "yunidesk";
 import { copy } from "@/lib/copy";
 import { cn } from "@/lib/utils";
+import { useCan } from "@/hooks/use-bootstrap";
 import { Skeleton } from "@/components/ui/skeleton";
 import { BlurFade } from "@/components/magicui/blur-fade";
 import { ContactActions } from "@/features/contacts/contact-actions";
@@ -11,6 +12,9 @@ import { ContactDetails, ContactSummary } from "@/features/contacts/contact-deta
 import { ConversationLinkList } from "@/features/contacts/conversation-link-list";
 import { useContactDetail } from "@/features/contacts/use-contact";
 import { useInboxParams } from "../../lib/use-inbox-params";
+import type { useConversationActions } from "../use-conversation-actions";
+import { ConversationFields } from "./conversation-fields";
+import { ConversationTags } from "./conversation-tags";
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
@@ -23,16 +27,18 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
 
 interface ContactPanelProps {
   conversation: AgentConversation;
+  actions: ReturnType<typeof useConversationActions>;
   overlay: boolean;
   onClose: () => void;
 }
 
-export function ContactPanel({ conversation, overlay, onClose }: ContactPanelProps) {
+export function ContactPanel({ conversation, actions, overlay, onClose }: ContactPanelProps) {
   const { view } = useInboxParams();
   const navigate = useNavigate();
   const detail = useContactDetail(conversation.contact.id);
   const contact = detail.data?.contact ?? conversation.contact;
   const others = (detail.data?.conversations ?? []).filter((c) => c.id !== conversation.id);
+  const editable = useCan("inbox.update");
 
   return (
     <aside
@@ -60,6 +66,12 @@ export function ContactPanel({ conversation, overlay, onClose }: ContactPanelPro
         <div className="px-5 pb-4">
           <ContactDetails contact={contact} />
         </div>
+        <Section title={copy.tags.title}>
+          <ConversationTags conversation={conversation} editable={editable} />
+        </Section>
+        <Section title={copy.fields.title}>
+          <ConversationFields conversation={conversation} onSave={actions.setField} editable={editable} />
+        </Section>
         <Section title={copy.contactPanel.otherConversations}>
           {detail.isPending ? <Skeleton className="h-8 w-full" /> : <ConversationLinkList conversations={others} empty={copy.contactPanel.noOtherConversations} />}
         </Section>

@@ -1,11 +1,13 @@
 import { SendHorizontal } from "lucide-react";
-import { replyTimeLabel } from "yunidesk";
+import { isAwayNow, replyStatusLabel } from "yunidesk";
 import { conversationRoute, useMessenger } from "../../state/context";
 
 export function SendMessageCard() {
-  const { strings, data, navigate } = useMessenger();
-  const online = data.state.teamOnline;
-  const replyTime = data.config ? replyTimeLabel(strings, data.config.replyTime) : null;
+  const { strings, locale, data, navigate } = useMessenger();
+  // Outside business hours the line says when the team is back, even if someone happens to be online.
+  const away = isAwayNow(data.config?.availability);
+  const online = data.state.teamOnline && !away;
+  const replyTime = data.config ? replyStatusLabel(strings, data.config, Date.now(), locale) : null;
   return (
     <button
       type="button"

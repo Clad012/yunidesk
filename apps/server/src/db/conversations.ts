@@ -2,6 +2,7 @@ import {
   MAX_ATTACHMENTS_PER_MESSAGE,
   MAX_MESSAGE_LENGTH,
   type Channel,
+  type ConversationPriority,
   type ConversationStatus,
   type Message,
   type MessageKind,
@@ -10,21 +11,35 @@ import {
 import type { Env } from "../env";
 import { badRequest, notFound } from "../lib/errors";
 import { newId } from "../lib/ids";
+import { sendPush } from "../lib/push/notify";
 import { contactChannel, notifyAgents, notifyContact } from "../lib/realtime";
+import { deliverEmailReply } from "../lib/email-channel/outbound";
 import { sendWebhook } from "../lib/webhooks";
-import type { WebhookActor, WebhookContactSummary } from "yunidesk/webhooks";
-import type { AgentRow, AttachmentRow, ContactRow, ConversationRow, MessageRow } from "./rows";
+import { getSettings } from "../lib/settings";
+import { sameClosedPeriod, teamAway } from "../lib/business-hours";
+import { getAssistant, isAssistantReady } from "../lib/assistant/settings";
+import type { WebhookActor, WebhookContactSummary, WebhookConversationLabels } from "yunidesk/webhooks";
+import {
+  mergeCustomFields,
+  parseCustomFields,
+  sameCustomFields,
+  toConversationField,
+  validateCustomFieldsPatch,
+} from "../lib/custom-fields";
+import type { AgentRow, AttachmentRow, ContactRow, ConversationFieldRow, ConversationRow, MessageRow } from "./rows";
+import { loadConversationTags } from "./tags";
 import { selectIn } from "./rows";
-import { loadAgents, toAgentConversations, toContactConversations, toMessages } from "./serialize";
+import { loadAgents, toAgentConversations, toContactConversations, toContactMessage, toMessages } from "./serialize";
+import { COUNT_REOPEN_SQL, factsEffect, factsUpdate } from "../lib/reports/conversation-facts";
 
-/** What a contact may see: their and the team's messages, plus the "resolved" marker. Never notes. */
-export const CONTACT_VISIBLE_SQL = `(kind = 'text' OR (kind = 'event' AND json_extract(event, '$.type') IN ('resolved', 'handed_off')))`;
+/** What a contact may see: their and the team's messages, the "resolved", hand-off and away markers. Never notes. */
+export const CONTACT_VISIBLE_SQL = `(kind = 'text' OR (kind = 'event' AND json_extract(event, '$.type') IN ('resolved', 'handed_off', 'away')))`;
 
 export function isVisibleToContact(row: Pick<MessageRow, "kind" | "event">): boolean {
   if (row.kind === "text") return true;
   if (row.kind !== "event" || !row.event) return false;
   const type = (JSON.parse(row.event) as SystemEvent).type;
-  return type === "resolved" || type === "handed_off";
+  return type === "resolved" || type === "handed_off" || type === "away";
 }
 
 export type Author =
@@ -40,6 +55,21 @@ export interface MessageDraft {
 
 const PREVIEW_LENGTH = 280;
 
+/** How an inbound email message arrived (the email channel). */
+export interface InboundEmailMeta {
+  messageId: string | null;
+  inReplyTo: string | null;
+  /** DMARC or aligned DKIM passed. */
+  verified: boolean;
+}
+
+export interface InsertOptions {
+  ai?: boolean;
+  email?: InboundEmailMeta;
+  /** Written in the same batch as the message (e.g. the email's full text), given the new message id. */
+  extraStatements?: (messageId: string) => D1PreparedStatement[];
+}
+
 export function actorOf(author: Author): WebhookActor {
   if (author.type === "contact") return { type: "contact", id: author.contactId };
   if (!author.agent) return { type: "system", id: null };
@@ -51,6 +81,50 @@ async function contactSummary(env: Env, contactId: string): Promise<WebhookConta
     .bind(contactId)
     .first<Pick<ContactRow, "id" | "external_id" | "email" | "name">>();
   return { id: contactId, externalId: row?.external_id ?? null, email: row?.email ?? null, name: row?.name ?? null };
+}
+
+/** Priority, tag names, custom fields and team, as conversation webhooks carry them (team only). */
+export async function conversationLabels(env: Env, row: ConversationRow): Promise<WebhookConversationLabels> {
+  const tags = (await loadConversationTags(env, [row.id])).get(row.id) ?? [];
+  const team = row.team_id
+    ? await env.DB.prepare("SELECT name FROM teams WHERE id = ?").bind(row.team_id).first<{ name: string }>()
+    : null;
+  return {
+    priority: row.priority ?? "normal",
+    tags: tags.map((t) => t.name),
+    customFields: parseCustomFields(row.custom_fields),
+    teamId: team ? row.team_id : null,
+    team: team?.name ?? null,
+  };
+}
+
+async function sendConversationUpdated(env: Env, row: ConversationRow, actor: WebhookActor): Promise<void> {
+  await sendWebhook(env, "conversation.updated", {
+    conversationId: row.id,
+    contactId: row.contact_id,
+    actor,
+    status: row.status,
+    assigneeId: row.assignee_id,
+    ...(await conversationLabels(env, row)),
+  });
+}
+
+/**
+ * After a team-only change that writes no timeline event (tags): bumps updated_at, tells the
+ * team's dashboards and sends conversation.updated. Contacts are not told: nothing they see changed.
+ */
+export async function labelsChanged(
+  env: Env,
+  ctx: ExecutionContext,
+  agent: AgentRow,
+  conversationId: string,
+): Promise<ConversationRow> {
+  await env.DB.prepare("UPDATE conversations SET updated_at = MAX(updated_at, ?) WHERE id = ?").bind(Date.now(), conversationId).run();
+  const current = await getConversation(env, conversationId);
+  const [agentConversation] = await toAgentConversations(env, [current]);
+  if (agentConversation) ctx.waitUntil(notifyAgents(env, { type: "conversation.updated", conversation: agentConversation }));
+  ctx.waitUntil(sendConversationUpdated(env, current, actorOf({ type: "agent", agent })));
+  return current;
 }
 
 function sameAuthor(row: MessageRow, author: Author): boolean {
@@ -95,22 +169,36 @@ export async function createConversation(
   contactId: string,
   channel: Channel,
   draft: MessageDraft,
+  options: InsertOptions & { subject?: string | null } = {},
 ): Promise<{ conversation: ConversationRow; message: Message }> {
   const author: Author = { type: "contact", contactId };
   const attachments = await validateDraft(env, author, draft);
   const now = Date.now();
   const id = newId("cnv");
   await env.DB.prepare(
-    `INSERT INTO conversations (id, contact_id, status, channel, created_at, updated_at, last_message_at)
-     VALUES (?, ?, 'open', ?, ?, ?, ?)`,
+    `INSERT INTO conversations (id, contact_id, status, channel, created_at, updated_at, last_message_at, subject)
+     VALUES (?, ?, 'open', ?, ?, ?, ?, ?)`,
   )
-    .bind(id, contactId, channel, now, now, now)
+    .bind(id, contactId, channel, now, now, now, options.subject ?? null)
     .run();
   const conversation = await getConversation(env, id);
-  const result = await insertMessage(env, ctx, origin, conversation, author, "text", draft, attachments);
+  const { subject: _subject, ...insertOptions } = options;
+  const result = await insertMessage(env, ctx, origin, conversation, author, "text", draft, attachments, null, insertOptions);
+  ctx.waitUntil(sendPush(env, origin, { kind: "newConversation", conversation: result.conversation, preview: draft.body }));
   ctx.waitUntil(
     contactSummary(env, contactId).then((contact) =>
-      sendWebhook(env, "conversation.created", { conversationId: id, contactId, channel, contact }),
+      sendWebhook(env, "conversation.created", {
+        conversationId: id,
+        contactId,
+        channel,
+        contact,
+        priority: conversation.priority ?? "normal",
+        tags: [],
+        customFields: parseCustomFields(conversation.custom_fields),
+        // Rules route it right after this event; conversation.updated carries the team.
+        teamId: null,
+        team: null,
+      }),
     ),
   );
   return result;
@@ -124,6 +212,7 @@ export async function postMessage(
   author: Author,
   kind: Exclude<MessageKind, "event">,
   draft: MessageDraft,
+  options: InsertOptions = {},
 ): Promise<{ conversation: ConversationRow; message: Message }> {
   if (draft.clientId) {
     const existing = await env.DB.prepare("SELECT * FROM messages WHERE conversation_id = ? AND client_id = ?")
@@ -138,7 +227,11 @@ export async function postMessage(
     }
   }
   const attachments = await validateDraft(env, author, draft);
-  return insertMessage(env, ctx, origin, conversation, author, kind, draft, attachments);
+  const result = await insertMessage(env, ctx, origin, conversation, author, kind, draft, attachments, null, options);
+  if (author.type === "contact" && result.conversation.assignee_id) {
+    ctx.waitUntil(sendPush(env, origin, { kind: "assignedMessage", conversation: result.conversation, preview: draft.body }));
+  }
+  return result;
 }
 
 async function insertMessage(
@@ -151,16 +244,28 @@ async function insertMessage(
   draft: MessageDraft,
   attachments: AttachmentRow[],
   event: SystemEvent | null = null,
-  options: { ai?: boolean } = {},
+  options: InsertOptions = {},
 ): Promise<{ conversation: ConversationRow; message: Message; delivered: Promise<void> }> {
   const now = Math.max(Date.now(), conversation.updated_at);
   const id = newId("msg");
   const body = draft.body.trim();
   const agent = author.type === "contact" ? null : author.agent;
+  // A team reply in an email conversation goes out as an email (notes never do).
+  const emailOut = conversation.channel === "email" && kind === "text" && author.type === "agent";
+  const emailIn = author.type === "contact" ? (options.email ?? null) : null;
+  const email = {
+    direction: emailOut ? "outbound" : emailIn ? "inbound" : null,
+    messageId: emailIn?.messageId ?? null,
+    inReplyTo: emailIn?.inReplyTo ?? null,
+    status: emailOut ? "pending" : null,
+    nextAttemptAt: emailOut ? now : null,
+    verified: emailIn ? (emailIn.verified ? 1 : 0) : null,
+  } as const;
   const statements: D1PreparedStatement[] = [
     env.DB.prepare(
-      `INSERT INTO messages (id, conversation_id, author_type, agent_id, kind, body, event, client_id, created_at, ai)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO messages (id, conversation_id, author_type, agent_id, kind, body, event, client_id, created_at, ai,
+         email_direction, email_message_id, email_in_reply_to, email_status, email_next_attempt_at, email_verified)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).bind(
       id,
       conversation.id,
@@ -172,7 +277,14 @@ async function insertMessage(
       draft.clientId,
       now,
       options.ai ? 1 : 0,
+      email.direction,
+      email.messageId,
+      email.inReplyTo,
+      email.status,
+      email.nextAttemptAt,
+      email.verified,
     ),
+    ...(options.extraStatements?.(id) ?? []),
   ];
   if (attachments.length > 0) {
     statements.push(
@@ -183,6 +295,7 @@ async function insertMessage(
     );
   }
 
+  let assigneeBeforeIndex = -1;
   if (kind === "text") {
     const preview = body.length > PREVIEW_LENGTH ? `${body.slice(0, PREVIEW_LENGTH - 1)}…` : body;
     const previewSet = `last_message_at = ?, last_message_body = ?, last_message_author = ?,
@@ -192,11 +305,14 @@ async function insertMessage(
       statements.push(
         env.DB.prepare(
           `UPDATE conversations SET ${previewSet}, last_contact_message_at = ?, contact_last_read_at = ?,
-             status = 'open', snoozed_until = NULL, resolved_at = NULL
+             ${COUNT_REOPEN_SQL}, status = 'open', snoozed_until = NULL, resolved_at = NULL
            WHERE id = ?`,
         ).bind(...previewValues, now, now, conversation.id),
       );
     } else {
+      // Read inside the same transaction, to know whether this reply is what assigned it.
+      assigneeBeforeIndex = statements.length;
+      statements.push(env.DB.prepare("SELECT assignee_id FROM conversations WHERE id = ?").bind(conversation.id));
       statements.push(
         env.DB.prepare(
           `UPDATE conversations SET ${previewSet}, last_agent_message_at = ?, agent_last_read_at = ?,
@@ -225,9 +341,17 @@ async function insertMessage(
   } else {
     statements.push(env.DB.prepare("UPDATE conversations SET updated_at = ? WHERE id = ?").bind(now, conversation.id));
   }
+  // Report facts (first response, AI involvement): see lib/reports/conversation-facts.ts.
+  const facts = factsUpdate(
+    factsEffect({ authorType: author.type, agentKind: agent?.kind ?? null, kind, ai: options.ai === true, event }),
+    conversation.id,
+    now,
+  );
+  if (facts) statements.push(env.DB.prepare(facts.sql).bind(...facts.values));
 
+  let batchResults: D1Result[];
   try {
-    await env.DB.batch(statements);
+    batchResults = await env.DB.batch(statements);
   } catch (error) {
     // Two retries of the same send raced; return the one that won.
     if (draft.clientId && String(error).includes("UNIQUE")) {
@@ -242,7 +366,16 @@ async function insertMessage(
     throw error;
   }
 
-  const updated = await getConversation(env, conversation.id);
+  let updated = await getConversation(env, conversation.id);
+  const assigneeBefore =
+    assigneeBeforeIndex === -1 ? undefined : (batchResults[assigneeBeforeIndex]?.results[0] as { assignee_id: string | null } | undefined);
+  if (assigneeBefore && assigneeBefore.assignee_id === null && updated.assignee_id !== null && agent) {
+    updated = await assignmentChanged(env, ctx, origin, updated, {
+      to: updated.assignee_id,
+      assigneeName: agent.name,
+      source: { type: "first_reply", agent },
+    });
+  }
   const row: MessageRow = {
     id,
     conversation_id: conversation.id,
@@ -254,6 +387,14 @@ async function insertMessage(
     client_id: draft.clientId,
     created_at: now,
     ai: options.ai ? 1 : 0,
+    email_direction: email.direction,
+    email_message_id: email.messageId,
+    email_in_reply_to: email.inReplyTo,
+    email_status: email.status,
+    email_error: null,
+    email_attempts: 0,
+    email_next_attempt_at: email.nextAttemptAt,
+    email_verified: email.verified,
   };
   const agents = await loadAgents(env);
   const [message] = await toMessages(env, origin, [row], agents);
@@ -276,6 +417,7 @@ async function insertMessage(
     );
     if (author.type === "agent") ctx.waitUntil(contactChannel(env, conversation.contact_id).scheduleUnreadCheck());
   }
+  if (emailOut) ctx.waitUntil(deliverEmailReply(env, ctx, origin, id));
   return { conversation: updated, message: message!, delivered };
 }
 
@@ -297,7 +439,7 @@ async function broadcastMessage(
           env,
           conversation.contact_id,
           isVisibleToContact(row)
-            ? { type: "message.created", message, conversation: contactConversation }
+            ? { type: "message.created", message: toContactMessage(message), conversation: contactConversation }
             : { type: "conversation.updated", conversation: contactConversation },
         ),
       );
@@ -310,6 +452,11 @@ export interface ConversationPatch {
   status?: ConversationStatus;
   snoozedUntil?: number | null;
   assigneeId?: string | null;
+  priority?: ConversationPriority;
+  /** `{ key: value | null }`, merged into the stored values (null clears). Checked against the field definitions. */
+  customFields?: Record<string, unknown>;
+  /** Moves it to a team (null: out of its team). Doesn't change the assignee. */
+  teamId?: string | null;
 }
 
 export async function updateConversation(
@@ -324,6 +471,7 @@ export async function updateConversation(
   const events: SystemEvent[] = [];
   const sets: string[] = [];
   const values: unknown[] = [];
+  let assignment: AssignmentChange | null = null;
 
   if (patch.assigneeId !== undefined && patch.assigneeId !== conversation.assignee_id) {
     let assigneeName: string | null = null;
@@ -336,7 +484,19 @@ export async function updateConversation(
     }
     sets.push("assignee_id = ?");
     values.push(patch.assigneeId);
-    events.push({ type: "assigned", agentName: agent.name, assigneeName });
+    assignment = { to: patch.assigneeId, assigneeName, source: { type: "teammate", agent } };
+  }
+
+  if (patch.teamId !== undefined && patch.teamId !== conversation.team_id) {
+    let teamName: string | null = null;
+    if (patch.teamId) {
+      const team = await env.DB.prepare("SELECT name FROM teams WHERE id = ?").bind(patch.teamId).first<{ name: string }>();
+      if (!team) throw badRequest("Unknown team");
+      teamName = team.name;
+    }
+    sets.push("team_id = ?");
+    values.push(patch.teamId);
+    events.push({ type: "team", agentName: agent.name, teamName });
   }
 
   if (patch.status && patch.status !== conversation.status) {
@@ -349,12 +509,30 @@ export async function updateConversation(
     } else if (patch.status === "snoozed") {
       const until = patch.snoozedUntil;
       if (!until || until <= now) throw badRequest("Snooze needs a time in the future");
-      sets.push("snoozed_until = ?, resolved_at = NULL");
+      sets.push(`snoozed_until = ?, resolved_at = NULL, ${COUNT_REOPEN_SQL}`);
       values.push(until);
       events.push({ type: "snoozed", agentName: agent.name, until });
     } else {
-      sets.push("snoozed_until = NULL, resolved_at = NULL");
+      sets.push(`snoozed_until = NULL, resolved_at = NULL, ${COUNT_REOPEN_SQL}`);
       events.push({ type: "reopened", agentName: agent.name });
+    }
+  }
+
+  if (patch.priority && patch.priority !== (conversation.priority ?? "normal")) {
+    sets.push("priority = ?");
+    values.push(patch.priority);
+    events.push({ type: "priority", agentName: agent.name, priority: patch.priority });
+  }
+
+  if (patch.customFields !== undefined) {
+    const { results } = await env.DB.prepare("SELECT * FROM conversation_fields").all<ConversationFieldRow>();
+    const checked = validateCustomFieldsPatch(results.map(toConversationField), patch.customFields);
+    if (!checked.ok) throw badRequest(checked.error, "invalid_custom_fields");
+    const current = parseCustomFields(conversation.custom_fields);
+    if (!sameCustomFields(current, mergeCustomFields(current, checked.value))) {
+      // json_patch merges in SQL, so two teammates editing different fields at once both win.
+      sets.push("custom_fields = json_patch(custom_fields, ?)");
+      values.push(JSON.stringify(checked.value));
     }
   }
 
@@ -364,6 +542,7 @@ export async function updateConversation(
     .run();
 
   let current = await getConversation(env, conversation.id);
+  if (assignment) current = await assignmentChanged(env, ctx, origin, current, assignment);
   for (const event of events) {
     ({ conversation: current } = await insertMessage(
       env,
@@ -377,15 +556,91 @@ export async function updateConversation(
       event,
     ));
   }
-  ctx.waitUntil(
-    sendWebhook(env, "conversation.updated", {
-      conversationId: current.id,
-      contactId: current.contact_id,
-      actor: actorOf({ type: "agent", agent }),
-      status: current.status,
-      assigneeId: current.assignee_id,
-    }),
+  if (events.length === 0 && !assignment) {
+    // Only custom fields changed: no timeline event carried the new state to the dashboards.
+    const [agentConversation] = await toAgentConversations(env, [current]);
+    if (agentConversation) ctx.waitUntil(notifyAgents(env, { type: "conversation.updated", conversation: agentConversation }));
+  }
+  ctx.waitUntil(sendConversationUpdated(env, current, actorOf({ type: "agent", agent })));
+  return current;
+}
+
+export type AssignmentSource =
+  /** A teammate or an API key's bot (PATCH assigneeId). */
+  | { type: "teammate"; agent: AgentRow }
+  /** The automatic assignment rules. */
+  | { type: "rules" }
+  /** A teammate's first reply took an unassigned conversation. */
+  | { type: "first_reply"; agent: AgentRow };
+
+export interface AssignmentChange {
+  to: string | null;
+  assigneeName: string | null;
+  source: AssignmentSource;
+}
+
+/**
+ * Every change of assignee goes through here exactly once, after the row is written, whatever
+ * made it: a teammate or a key (PATCH), the assignment rules, or a first reply. Writes the timeline
+ * event and sends the "assigned to you" push (not for a first reply: the replier took it themselves).
+ */
+async function assignmentChanged(
+  env: Env,
+  ctx: ExecutionContext,
+  origin: string,
+  conversation: ConversationRow,
+  change: AssignmentChange,
+): Promise<ConversationRow> {
+  if (change.source.type === "first_reply") return conversation;
+  const actor = change.source.type === "teammate" ? { id: change.source.agent.id, name: change.source.agent.name } : { id: null, name: null };
+  const { conversation: current } = await insertMessage(
+    env,
+    ctx,
+    origin,
+    conversation,
+    { type: "system", agent: change.source.type === "teammate" ? change.source.agent : null },
+    "event",
+    { body: "", attachmentIds: [], clientId: null },
+    [],
+    { type: "assigned", agentName: actor.name, assigneeName: change.assigneeName },
   );
+  if (current.assignee_id) ctx.waitUntil(sendPush(env, origin, { kind: "assigned", conversation: current, actor }));
+  return current;
+}
+
+/**
+ * After the assignment rules routed a conversation (db/routing.ts wrote team and assignee):
+ * the team event, the assignment, and conversation.updated with a system actor.
+ */
+export async function announceRouting(
+  env: Env,
+  ctx: ExecutionContext,
+  origin: string,
+  conversationId: string,
+  team: { name: string },
+  assigneeId: string | null,
+): Promise<ConversationRow> {
+  let current = await getConversation(env, conversationId);
+  ({ conversation: current } = await insertMessage(
+    env,
+    ctx,
+    origin,
+    current,
+    { type: "system", agent: null },
+    "event",
+    { body: "", attachmentIds: [], clientId: null },
+    [],
+    { type: "team", agentName: null, teamName: team.name },
+  ));
+  if (assigneeId) {
+    const assignee = await env.DB.prepare("SELECT name FROM agents WHERE id = ?").bind(assigneeId).first<{ name: string }>();
+    current = await assignmentChanged(env, ctx, origin, current, {
+      to: assigneeId,
+      assigneeName: assignee?.name ?? null,
+      source: { type: "rules" },
+    });
+  }
+  ctx.waitUntil(sendConversationUpdated(env, current, { type: "system", id: null }));
   return current;
 }
 
@@ -491,17 +746,22 @@ export async function postAssistantMessage(
   );
 }
 
-/** "Talk to a human": the assistant stops, the team sees a marker and the conversation stays unassigned. */
+/** "Talk to a human": the assistant stops and the team sees a marker. Use handOffAndRoute (db/routing.ts) so the rules run. */
 export async function handOffToTeam(
   env: Env,
   ctx: ExecutionContext,
   origin: string,
   conversation: ConversationRow,
 ): Promise<ConversationRow> {
+  const now = Date.now();
+  // Outside business hours the marker says when the team is back, and counts as the away message.
+  const away = teamAway((await getSettings(env)).businessHours, now);
   const changed = await env.DB.prepare(
-    "UPDATE conversations SET ai_state = 'handed_off', ai_lock_until = NULL, status = 'open', updated_at = ? WHERE id = ? AND ai_state = 'active'",
+    `UPDATE conversations SET ai_state = 'handed_off', ai_lock_until = NULL, ${COUNT_REOPEN_SQL}, status = 'open', updated_at = ?,
+       away_notified_at = CASE WHEN ? THEN ? ELSE away_notified_at END
+     WHERE id = ? AND ai_state = 'active'`,
   )
-    .bind(Date.now(), conversation.id)
+    .bind(now, away ? 1 : 0, now, conversation.id)
     .run();
   const current = await getConversation(env, conversation.id);
   if (!changed.meta.changes) return current;
@@ -514,16 +774,77 @@ export async function handOffToTeam(
     "event",
     { body: "", attachmentIds: [], clientId: null },
     [],
-    { type: "handed_off", agentName: null },
+    away?.backAt ? { type: "handed_off", agentName: null, backAt: away.backAt } : { type: "handed_off", agentName: null },
   );
-  ctx.waitUntil(
-    sendWebhook(env, "conversation.updated", {
-      conversationId: updated.id,
-      contactId: updated.contact_id,
-      actor: { type: "contact", id: updated.contact_id },
-      status: updated.status,
-      assigneeId: updated.assignee_id,
-    }),
+  ctx.waitUntil(sendPush(env, origin, { kind: "handoff", conversation: updated }));
+  ctx.waitUntil(sendConversationUpdated(env, updated, { type: "contact", id: updated.contact_id }));
+  return updated;
+}
+
+/**
+ * Outside business hours, a customer writing to the team (not to the assistant) gets the away
+ * message once per closed period. The claim on `away_notified_at` makes two messages sent at the
+ * same time post it once.
+ */
+export async function postAwayMessage(
+  env: Env,
+  ctx: ExecutionContext,
+  origin: string,
+  conversationId: string,
+  /** The customer is signed in (the assistant may skip anonymous visitors). */
+  identified: boolean,
+): Promise<void> {
+  const settings = await getSettings(env);
+  const now = Date.now();
+  const away = teamAway(settings.businessHours, now);
+  if (!away) return;
+  const conversation = await getConversation(env, conversationId);
+  if (conversation.last_message_author !== "contact") return;
+  if (sameClosedPeriod(settings.businessHours, conversation.away_notified_at, now)) return;
+  // Someone on the team already answered since closing: they're here, don't say they're away.
+  if (sameClosedPeriod(settings.businessHours, conversation.last_agent_message_at, now)) return;
+  // The assistant answers this one; if it hands off, its marker says when the team is back.
+  const assistant = await getAssistant(env);
+  const assistantTakesIt =
+    isAssistantReady(assistant) &&
+    (conversation.ai_state === null || conversation.ai_state === "active") &&
+    (identified || assistant.allowAnonymous);
+  if (assistantTakesIt) return;
+  const claimed = await env.DB.prepare("UPDATE conversations SET away_notified_at = ? WHERE id = ? AND away_notified_at IS ?")
+    .bind(now, conversation.id, conversation.away_notified_at)
+    .run();
+  if (!claimed.meta.changes) return;
+  await insertMessage(
+    env,
+    ctx,
+    origin,
+    await getConversation(env, conversation.id),
+    { type: "system", agent: null },
+    "event",
+    { body: "", attachmentIds: [], clientId: null },
+    [],
+    { type: "away", agentName: null, message: settings.awayMessage, backAt: away.backAt },
+  );
+}
+
+/** A team-only marker in the timeline (e.g. an email that could not be delivered). */
+export async function postSystemEvent(
+  env: Env,
+  ctx: ExecutionContext,
+  origin: string,
+  conversation: ConversationRow,
+  event: SystemEvent,
+): Promise<ConversationRow> {
+  const { conversation: updated } = await insertMessage(
+    env,
+    ctx,
+    origin,
+    conversation,
+    { type: "system", agent: null },
+    "event",
+    { body: "", attachmentIds: [], clientId: null },
+    [],
+    event,
   );
   return updated;
 }

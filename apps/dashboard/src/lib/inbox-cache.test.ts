@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { conversation, message } from "@/test/fixtures";
-import { flattenMessages, matchesView, upsertConversation, upsertMessage, type ConversationPages, type MessagePages } from "./inbox-cache";
+import {
+  flattenMessages,
+  matchesFilters,
+  matchesView,
+  upsertConversation,
+  upsertMessage,
+  type ConversationPages,
+  type MessagePages,
+} from "./inbox-cache";
 
 const pages = (...lists: { ids: [string, number][]; next: string | null }[]): ConversationPages => ({
   pages: lists.map((l) => ({ items: l.ids.map(([id, at]) => conversation(id, at)), nextCursor: l.next })),
@@ -37,6 +45,34 @@ describe("upsertConversation", () => {
   it("leaves out an old conversation when more pages exist, but appends it on the last page", () => {
     expect(ids(upsertConversation(pages({ ids: [["a", 30]], next: "cur" }), conversation("z", 1), true))).toEqual([["a"]]);
     expect(ids(upsertConversation(pages({ ids: [["a", 30]], next: null }), conversation("z", 1), true))).toEqual([["a", "z"]]);
+  });
+});
+
+describe("tag and priority filters", () => {
+  const billing = { id: "tag_billing", name: "Billing", color: "red" as const };
+  it("keeps a list to its tag and priority", () => {
+    const tagged = conversation("a", 1, { tags: [billing], priority: "urgent" });
+    expect(matchesFilters(tagged, { tag: "tag_billing" })).toBe(true);
+    expect(matchesFilters(conversation("b", 1), { tag: "tag_billing" })).toBe(false);
+    expect(matchesFilters(tagged, { tag: "tag_billing", priority: "high" })).toBe(false);
+    expect(matchesFilters(tagged, { priority: "urgent", sort: "priority" })).toBe(true);
+  });
+
+  it("keeps a team's list to that team", () => {
+    const billing = conversation("a", 1, { team: { id: "tem_billing", name: "Billing" } });
+    expect(matchesFilters(billing, { team: "tem_billing" })).toBe(true);
+    expect(matchesFilters(billing, { team: "tem_sales" })).toBe(false);
+    expect(matchesFilters(conversation("b", 1), { team: "tem_billing" })).toBe(false);
+  });
+
+  it("places by priority first, then newest, when the list is sorted by priority", () => {
+    const data: ConversationPages = {
+      pages: [{ items: [conversation("u", 10, { priority: "urgent" }), conversation("n1", 50), conversation("n2", 20), conversation("l", 99, { priority: "low" })], nextCursor: null }],
+      pageParams: [null],
+    };
+    expect(ids(upsertConversation(data, conversation("h", 5, { priority: "high" }), true, "priority"))).toEqual([["u", "h", "n1", "n2", "l"]]);
+    expect(ids(upsertConversation(data, conversation("n3", 30), true, "priority"))).toEqual([["u", "n1", "n3", "n2", "l"]]);
+    expect(ids(upsertConversation(data, conversation("h", 5, { priority: "high" }), true))).toEqual([["u", "n1", "n2", "l", "h"]]);
   });
 });
 

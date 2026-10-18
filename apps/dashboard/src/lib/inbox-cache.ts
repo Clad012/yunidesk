@@ -1,6 +1,6 @@
 import type { InfiniteData } from "@tanstack/react-query";
 import { mergeMessages, type AgentConversation, type Contact, type Page, type TimelineMessage } from "yunidesk";
-import type { InboxView } from "./endpoints";
+import type { InboxView, ListFilters } from "./endpoints";
 
 // Pure functions that fold realtime events and optimistic writes into the TanStack Query cache.
 
@@ -22,8 +22,25 @@ export function matchesView(conversation: AgentConversation, view: InboxView, me
   }
 }
 
-/** Same order as the server: newest message first, then id descending. */
-function comesBefore(a: AgentConversation, b: AgentConversation): boolean {
+/** The list's tag, team and priority filters (the view and the search are checked apart). */
+export function matchesFilters(conversation: AgentConversation, filters: ListFilters): boolean {
+  if (filters.tag && !conversation.tags.some((t) => t.id === filters.tag)) return false;
+  if (filters.team && conversation.team?.id !== filters.team) return false;
+  if (filters.priority && conversation.priority !== filters.priority) return false;
+  return true;
+}
+
+export type ListOrder = "recent" | "priority";
+
+const PRIORITY_RANK: Record<AgentConversation["priority"], number> = { urgent: 3, high: 2, normal: 1, low: 0 };
+
+/** Same order as the server: (urgent first when sorting by priority,) newest message first, then id descending. */
+function comesBefore(a: AgentConversation, b: AgentConversation, order: ListOrder): boolean {
+  if (order === "priority") {
+    const ra = PRIORITY_RANK[a.priority] ?? 1;
+    const rb = PRIORITY_RANK[b.priority] ?? 1;
+    if (ra !== rb) return ra > rb;
+  }
   return a.lastMessageAt > b.lastMessageAt || (a.lastMessageAt === b.lastMessageAt && a.id > b.id);
 }
 
@@ -31,12 +48,17 @@ function comesBefore(a: AgentConversation, b: AgentConversation): boolean {
  * Puts the conversation at its sorted place (or removes it when it no longer belongs to the list).
  * A conversation older than everything loaded is left out when more pages exist: pagination brings it.
  */
-export function upsertConversation(data: ConversationPages, conversation: AgentConversation, belongs: boolean): ConversationPages {
+export function upsertConversation(
+  data: ConversationPages,
+  conversation: AgentConversation,
+  belongs: boolean,
+  order: ListOrder = "recent",
+): ConversationPages {
   const pages = data.pages.map((page) => ({ ...page, items: page.items.filter((c) => c.id !== conversation.id) }));
   if (belongs) {
     let placed = false;
     for (const page of pages) {
-      const index = page.items.findIndex((c) => comesBefore(conversation, c));
+      const index = page.items.findIndex((c) => comesBefore(conversation, c, order));
       if (index !== -1) {
         page.items.splice(index, 0, conversation);
         placed = true;

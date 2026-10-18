@@ -2,6 +2,7 @@ import { useParams } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { copy } from "@/lib/copy";
 import { ApiError } from "@/lib/api";
+import { useCan } from "@/hooks/use-bootstrap";
 import { useHotkeys } from "@/hooks/use-hotkeys";
 import { useMediaQuery } from "@/hooks/use-media-query";
 import { activeConversationStore } from "@/features/notifications/attention";
@@ -56,6 +57,8 @@ function ConversationView({ id }: { id: string }) {
   const actions = useConversationActions(conversation.data);
   const { send, retry } = useSendMessage(id);
   const panel = usePanel();
+  const canReply = useCan("inbox.reply");
+  const canUpdate = useCan("inbox.update");
   useMarkRead(conversation.data);
 
   useEffect(() => {
@@ -64,9 +67,9 @@ function ConversationView({ id }: { id: string }) {
   }, [id]);
 
   useHotkeys({
-    e: () => conversation.data && actions.toggleResolved(),
-    r: () => composerBus.emit("focus", "text"),
-    n: () => composerBus.emit("focus", "note"),
+    e: () => canUpdate && conversation.data && actions.toggleResolved(),
+    r: () => canReply && composerBus.emit("focus", "text"),
+    n: () => canReply && composerBus.emit("focus", "note"),
   });
 
   if (conversation.isError && conversation.error instanceof ApiError && conversation.error.status === 404) {
@@ -77,7 +80,7 @@ function ConversationView({ id }: { id: string }) {
   return (
     <div className="relative flex min-w-0 flex-1">
       <div className="flex min-w-0 flex-1 flex-col">
-        <ConversationHeader conversation={conversation.data} actions={actions} panelOpen={panel.open} onTogglePanel={panel.toggle} />
+        <ConversationHeader conversation={conversation.data} actions={canUpdate ? actions : null} panelOpen={panel.open} onTogglePanel={panel.toggle} />
         <Timeline
           conversation={conversation.data}
           messages={messages.messages}
@@ -88,9 +91,13 @@ function ConversationView({ id }: { id: string }) {
           onRetry={retry}
         />
         <TeammatesReplying conversationId={id} />
-        <Composer conversation={conversation.data} send={send} />
+        {canReply ? (
+          <Composer conversation={conversation.data} send={send} />
+        ) : (
+          <p className="m-3 rounded-lg bg-muted px-4 py-3 text-sm text-muted-foreground">{copy.composer.viewOnly}</p>
+        )}
       </div>
-      {panel.open ? <ContactPanel conversation={conversation.data} overlay={!panel.wide} onClose={panel.close} /> : null}
+      {panel.open ? <ContactPanel conversation={conversation.data} actions={actions} overlay={!panel.wide} onClose={panel.close} /> : null}
     </div>
   );
 }

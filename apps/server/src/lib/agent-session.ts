@@ -95,7 +95,3 @@ export async function requireAgent(c: AppContext): Promise<AgentRow> {
   if (!agent) throw unauthorized();
   return agent;
 }
-
-export function requireOwner(agent: AgentRow): void {
-  if (agent.role !== "owner") throw forbidden("Only owners can do this");
-}

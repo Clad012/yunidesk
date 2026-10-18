@@ -1,6 +1,9 @@
 import type { HelpArticle, KnowledgeItem, Locale } from "yunidesk";
 import type { Env } from "../../env";
 import { ftsQuery } from "../../routes/agent/inbox";
+import { ensureSlugs } from "../../help-center/slug";
+import { helpCenterUrl } from "../../help-center/urls";
+import { getSettings } from "../settings";
 
 export interface KnowledgeRow {
   id: string;
@@ -8,6 +11,11 @@ export interface KnowledgeRow {
   title: string;
   body: string;
   locale: Locale | null;
+  slug: string | null;
+  category: string | null;
+  published: number;
+  position: number;
+  translation_group: string | null;
   created_at: number;
   updated_at: number;
 }
@@ -24,6 +32,12 @@ export function toKnowledgeItem(row: KnowledgeRow): KnowledgeItem {
     title: row.title,
     body: row.body,
     locale: row.locale,
+    // Filled by ensureSlugs before items are listed; the id keeps the shape if that ever failed.
+    slug: row.slug ?? row.id,
+    category: row.category,
+    published: row.published === 1,
+    position: row.position,
+    translationGroup: row.translation_group,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -40,14 +54,26 @@ const MAX_HELP_ARTICLES = 100;
  * The FAQ entries customers see in the messenger: those in their language and those for every
  * language, in the order they were added. Articles stay private.
  */
-export async function listHelpArticles(env: Env, locale: Locale): Promise<HelpArticle[]> {
-  const { results } = await env.DB.prepare(
-    `SELECT id, title, body, updated_at FROM knowledge_items
-     WHERE kind = 'faq' AND (locale IS NULL OR locale = ?) ORDER BY created_at, rowid LIMIT ?`,
-  )
-    .bind(locale, MAX_HELP_ARTICLES)
-    .all<Pick<KnowledgeRow, "id" | "title" | "body" | "updated_at">>();
-  return results.map((row) => ({ id: row.id, title: row.title, body: row.body, updatedAt: row.updated_at }));
+export async function listHelpArticles(env: Env, locale: Locale, origin: string): Promise<HelpArticle[]> {
+  await ensureSlugs(env);
+  const [{ results }, settings] = await Promise.all([
+    env.DB.prepare(
+      `SELECT id, title, body, slug, published, updated_at FROM knowledge_items
+       WHERE kind = 'faq' AND (locale IS NULL OR locale = ?) ORDER BY created_at, rowid LIMIT ?`,
+    )
+      .bind(locale, MAX_HELP_ARTICLES)
+      .all<Pick<KnowledgeRow, "id" | "title" | "body" | "slug" | "published" | "updated_at">>(),
+    getSettings(env),
+  ]);
+  // Published entries link to their help center page ("Open in the help center").
+  const linked = settings.helpCenter.enabled;
+  return results.map((row) => ({
+    id: row.id,
+    title: row.title,
+    body: row.body,
+    updatedAt: row.updated_at,
+    helpCenterUrl: linked && row.published === 1 && row.slug ? helpCenterUrl(origin, locale, row.slug) : null,
+  }));
 }
 
 export async function searchKnowledge(env: Env, question: string): Promise<KnowledgeRow[]> {

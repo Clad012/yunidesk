@@ -3,6 +3,7 @@ import { useBootstrap } from "@/hooks/use-bootstrap";
 import { useRealtime } from "@/hooks/use-realtime";
 import { useAttention } from "@/features/notifications/use-attention";
 import { NotificationBanner } from "@/features/notifications/notification-banner";
+import { useServiceWorker } from "@/features/push/use-service-worker";
 import { NavRail } from "./nav-rail";
 import { ShortcutsDialog } from "./shortcuts-dialog";
 
@@ -10,6 +11,7 @@ export function AppShell() {
   const { agent } = useBootstrap();
   useRealtime(agent.id);
   useAttention();
+  useServiceWorker();
   return (
     <div className="flex h-full min-h-0 bg-sidebar">
       <NavRail />

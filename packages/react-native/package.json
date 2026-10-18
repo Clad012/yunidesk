@@ -1,6 +1,6 @@
 {
   "name": "yunidesk-react-native",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "private": false,
   "description": "Native Yunidesk support messenger for React Native and Expo apps.",
   "main": "./src/index.ts",

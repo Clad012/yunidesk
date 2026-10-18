@@ -67,6 +67,8 @@ export function SupportHome({
             online={teamOnline}
             theme={theme}
             strings={strings}
+            locale={locale}
+            now={now}
             onPress={() => onNewConversation()}
           />
         </View>

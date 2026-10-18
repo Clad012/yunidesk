@@ -1,7 +1,8 @@
 import type { InfiniteData, QueryClient } from "@tanstack/react-query";
 import type { AgentConversation, AgentServerEvent, Contact, Page } from "yunidesk";
-import { queryKeys, type Bootstrap, type InboxView } from "../endpoints";
+import { queryKeys, type Bootstrap, type InboxView, type ListFilters } from "../endpoints";
 import {
+  matchesFilters,
   matchesView,
   patchContact,
   patchConversation,
@@ -20,7 +21,12 @@ type ContactPages = InfiniteData<Page<Contact>, string | null>;
 let countsTimer: ReturnType<typeof setTimeout> | null = null;
 function refreshCounts(qc: QueryClient): void {
   if (countsTimer) clearTimeout(countsTimer);
-  countsTimer = setTimeout(() => void qc.invalidateQueries({ queryKey: queryKeys.counts }), 250);
+  countsTimer = setTimeout(() => {
+    void qc.invalidateQueries({ queryKey: queryKeys.counts });
+    // Per-tag and per-team open counts in the views pane.
+    void qc.invalidateQueries({ queryKey: queryKeys.tags });
+    void qc.invalidateQueries({ queryKey: queryKeys.teams });
+  }, 250);
 }
 
 /** Folds a conversation snapshot into every cached list, the detail and the contact page. */
@@ -30,11 +36,15 @@ export function applyConversation(qc: QueryClient, conversation: AgentConversati
   }
   for (const [key, data] of qc.getQueriesData<ConversationPages>({ queryKey: queryKeys.conversationLists })) {
     if (!data) continue;
-    const [, view, q, contactId] = key as ReturnType<typeof queryKeys.conversationList>;
+    const [, view, q, contactId, rawFilters] = key as ReturnType<typeof queryKeys.conversationList>;
+    const filters: ListFilters = rawFilters ?? {};
     let next: ConversationPages;
     if (q) next = patchConversation(data, conversation.id, () => conversation);
     else if (contactId && contactId !== conversation.contact.id) continue;
-    else next = upsertConversation(data, conversation, matchesView(conversation, view as InboxView, meId));
+    else {
+      const belongs = matchesView(conversation, view as InboxView, meId) && matchesFilters(conversation, filters);
+      next = upsertConversation(data, conversation, belongs, filters.sort === "priority" ? "priority" : "recent");
+    }
     if (next !== data) qc.setQueryData(key, next);
   }
   qc.setQueryData<ContactDetail>(queryKeys.contact(conversation.contact.id), (detail) => {
@@ -118,6 +128,18 @@ export function applyEvent(qc: QueryClient, event: AgentServerEvent, meId: strin
       return;
     case "contact.deleted":
       applyContactDeleted(qc, event.contactId);
+      return;
+    case "agent.availability":
+      qc.setQueryData<Bootstrap>(queryKeys.bootstrap, (b) =>
+        b
+          ? {
+              ...b,
+              agent: b.agent.id === event.agentId ? { ...b.agent, availability: event.availability } : b.agent,
+              teammates: b.teammates.map((t) => (t.id === event.agentId ? { ...t, availability: event.availability } : t)),
+            }
+          : b,
+      );
+      void qc.invalidateQueries({ queryKey: queryKeys.teams });
       return;
   }
 }
