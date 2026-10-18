@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { SaveBar, SettingsPage } from "../settings-page";
 import { AssistantSettingsCard } from "./assistant-settings-card";
+import { HelpCenterCard } from "./help-center/help-center-card";
 import { KnowledgeCard } from "./knowledge/knowledge-card";
 import { OpenRouterKeyCard } from "./openrouter-key-card";
 import { ToolsCard } from "./tools/tools-card";
@@ -22,6 +23,7 @@ export function AssistantSection() {
   const lists = (
     <>
       <KnowledgeCard editable={isOwner} />
+      <HelpCenterCard />
       <ToolsCard editable={isOwner} />
     </>
   );
