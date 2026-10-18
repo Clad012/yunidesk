@@ -4,7 +4,7 @@ import type { AssistantSettings } from "yunidesk";
 import { copy } from "@/lib/copy";
 import { errorMessage } from "@/lib/api";
 import { endpoints, queryKeys } from "@/lib/endpoints";
-import { useIsOwner } from "@/hooks/use-bootstrap";
+import { useCan } from "@/hooks/use-bootstrap";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { SaveBar, SettingsPage } from "../settings-page";
@@ -17,7 +17,7 @@ import { UsageCard } from "./usage-card";
 import { useAssistantForm } from "./use-assistant-form";
 
 export function AssistantSection() {
-  const isOwner = useIsOwner();
+  const isOwner = useCan("assistant.manage");
   const settings = useQuery({ queryKey: queryKeys.assistant, queryFn: endpoints.assistant });
   const lists = (
     <>

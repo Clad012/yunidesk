@@ -1,7 +1,7 @@
 import { KeyRoundIcon, PlusIcon, ShieldAlertIcon } from "lucide-react";
 import { useState } from "react";
 import { copy } from "@/lib/copy";
-import { useIsOwner } from "@/hooks/use-bootstrap";
+import { useCan } from "@/hooks/use-bootstrap";
 import { useNow } from "@/hooks/use-now";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -11,7 +11,7 @@ import { CreateApiKeyDialog } from "./create-api-key-dialog";
 import { useApiKeys } from "./use-api-keys";
 
 export function ApiKeysSection() {
-  const isOwner = useIsOwner();
+  const isOwner = useCan("apiKeys.manage");
   const { keys, create, revoke } = useApiKeys(isOwner);
   const [creating, setCreating] = useState(false);
   const now = useNow();

@@ -3,6 +3,7 @@ import { useEffect, useMemo } from "react";
 import type { AgentConversation, Page, TimelineMessage } from "yunidesk";
 import { endpoints, queryKeys } from "@/lib/endpoints";
 import { flattenMessages, type ConversationPages, type MessagePages } from "@/lib/inbox-cache";
+import { useCan } from "@/hooks/use-bootstrap";
 
 /** Seeds the detail from any list that already has it, so opening a row is instant. */
 function fromLists(qc: ReturnType<typeof useQueryClient>, id: string): AgentConversation | undefined {
@@ -40,8 +41,10 @@ export function useMarkRead(conversation: AgentConversation | undefined): void {
   const qc = useQueryClient();
   const id = conversation?.id;
   const unread = conversation?.unread ?? false;
+  // Viewers don't change the team's read state.
+  const allowed = useCan("inbox.update");
   useEffect(() => {
-    if (!id || !unread) return;
+    if (!id || !unread || !allowed) return;
     const mark = () => {
       if (document.hidden) return;
       const patch = (c: AgentConversation | undefined) => (c ? { ...c, unread: false } : c);
@@ -58,5 +61,5 @@ export function useMarkRead(conversation: AgentConversation | undefined): void {
     mark();
     document.addEventListener("visibilitychange", mark);
     return () => document.removeEventListener("visibilitychange", mark);
-  }, [id, unread, qc]);
+  }, [id, unread, allowed, qc]);
 }

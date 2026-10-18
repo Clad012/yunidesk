@@ -16,7 +16,8 @@ import { SnoozeMenu } from "./snooze-menu";
 
 interface ConversationHeaderProps {
   conversation: AgentConversation;
-  actions: ReturnType<typeof useConversationActions>;
+  /** Null when the role can't assign, snooze or resolve (viewers). */
+  actions: ReturnType<typeof useConversationActions> | null;
   panelOpen: boolean;
   onTogglePanel: () => void;
 }
@@ -49,14 +50,18 @@ export function ConversationHeader({ conversation, actions, panelOpen, onToggleP
         <span className="hidden shrink-0 lg:inline-flex"><StatusBadge conversation={conversation} /></span>
         {conversation.aiActive ? <AiAnsweringChip /> : null}
       </div>
-      <AssignMenu conversation={conversation} onAssign={actions.assign} />
-      <SnoozeMenu onSnooze={actions.snooze} />
-      <Tip label={<span className="flex items-center gap-1.5">{resolved ? copy.conversation.reopen : copy.conversation.resolve} <Kbd className="bg-background/20 text-background">E</Kbd></span>}>
-        <Button size="sm" variant={resolved ? "outline" : "default"} onClick={actions.toggleResolved}>
-          {resolved ? <RotateCcwIcon /> : <CheckIcon />}
-          {resolved ? copy.conversation.reopen : copy.conversation.resolve}
-        </Button>
-      </Tip>
+      {actions ? (
+        <>
+          <AssignMenu conversation={conversation} onAssign={actions.assign} />
+          <SnoozeMenu onSnooze={actions.snooze} />
+          <Tip label={<span className="flex items-center gap-1.5">{resolved ? copy.conversation.reopen : copy.conversation.resolve} <Kbd className="bg-background/20 text-background">E</Kbd></span>}>
+            <Button size="sm" variant={resolved ? "outline" : "default"} onClick={actions.toggleResolved}>
+              {resolved ? <RotateCcwIcon /> : <CheckIcon />}
+              {resolved ? copy.conversation.reopen : copy.conversation.resolve}
+            </Button>
+          </Tip>
+        </>
+      ) : null}
       <Tip label={copy.conversation.toggleDetails}>
         <Button variant="ghost" size="icon-sm" onClick={onTogglePanel} aria-label={copy.conversation.toggleDetails} aria-pressed={panelOpen} className={cn(panelOpen && "text-primary")}>
           <PanelRightIcon />
