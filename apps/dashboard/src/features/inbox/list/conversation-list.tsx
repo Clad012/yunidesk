@@ -6,6 +6,7 @@ import { AnimatedListItem } from "@/components/magicui/animated-list";
 import { useInboxParams } from "../lib/use-inbox-params";
 import { ConversationRow } from "./conversation-row";
 import { ListEmpty, ListSkeleton } from "./list-states";
+import { OutsideHoursBadge } from "./outside-hours-badge";
 import { useConversationList } from "./use-conversation-list";
 
 export function ConversationList() {
@@ -43,8 +44,9 @@ export function ConversationList() {
 
   return (
     <section className="flex w-64 shrink-0 flex-col border-r xl:w-72 2xl:w-80" aria-label={copy.views[view]}>
-      <header className="flex h-14 shrink-0 items-center border-b px-4">
+      <header className="flex h-14 shrink-0 items-center gap-2 border-b px-4">
         <h2 className="truncate font-semibold">{q ? `“${q}”` : copy.views[view]}</h2>
+        <OutsideHoursBadge />
       </header>
       <div className="min-h-0 flex-1 overflow-y-auto scrollbar-thin">
         {isPending ? (
