@@ -4,6 +4,7 @@ import { copy } from "@/lib/copy";
 import { formatClock, formatDateTime } from "@/lib/time";
 import { cn } from "@/lib/utils";
 import { Tip } from "@/components/ui/tooltip";
+import { EmailMessageMeta } from "../email/email-message-meta";
 import { Attachments } from "./attachments";
 import { MessageBody } from "./message-body";
 
@@ -42,6 +43,7 @@ export function MessageBubble({ message, side, onRetry }: MessageBubbleProps) {
         </span>
       ) : null}
       <Attachments attachments={message.attachments} align={align} />
+      {message.delivery ? null : <EmailMessageMeta message={message} />}
       {message.delivery === "failed" ? (
         <button type="button" onClick={() => onRetry(message)} className="flex items-center gap-1 text-xs text-destructive hover:underline">
           <AlertCircleIcon className="size-3.5" /> {copy.conversation.failed} · {copy.common.retry}

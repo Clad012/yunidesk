@@ -11,8 +11,13 @@ import {
 import type { Env } from "../env";
 import { badRequest, notFound } from "../lib/errors";
 import { newId } from "../lib/ids";
+import { sendPush } from "../lib/push/notify";
 import { contactChannel, notifyAgents, notifyContact } from "../lib/realtime";
+import { deliverEmailReply } from "../lib/email-channel/outbound";
 import { sendWebhook } from "../lib/webhooks";
+import { getSettings } from "../lib/settings";
+import { sameClosedPeriod, teamAway } from "../lib/business-hours";
+import { getAssistant, isAssistantReady } from "../lib/assistant/settings";
 import type { WebhookActor, WebhookContactSummary, WebhookConversationLabels } from "yunidesk/webhooks";
 import {
   mergeCustomFields,
@@ -24,16 +29,16 @@ import {
 import type { AgentRow, AttachmentRow, ContactRow, ConversationFieldRow, ConversationRow, MessageRow } from "./rows";
 import { loadConversationTags } from "./tags";
 import { selectIn } from "./rows";
-import { loadAgents, toAgentConversations, toContactConversations, toMessages } from "./serialize";
+import { loadAgents, toAgentConversations, toContactConversations, toContactMessage, toMessages } from "./serialize";
 
-/** What a contact may see: their and the team's messages, plus the "resolved" marker. Never notes. */
-export const CONTACT_VISIBLE_SQL = `(kind = 'text' OR (kind = 'event' AND json_extract(event, '$.type') IN ('resolved', 'handed_off')))`;
+/** What a contact may see: their and the team's messages, the "resolved", hand-off and away markers. Never notes. */
+export const CONTACT_VISIBLE_SQL = `(kind = 'text' OR (kind = 'event' AND json_extract(event, '$.type') IN ('resolved', 'handed_off', 'away')))`;
 
 export function isVisibleToContact(row: Pick<MessageRow, "kind" | "event">): boolean {
   if (row.kind === "text") return true;
   if (row.kind !== "event" || !row.event) return false;
   const type = (JSON.parse(row.event) as SystemEvent).type;
-  return type === "resolved" || type === "handed_off";
+  return type === "resolved" || type === "handed_off" || type === "away";
 }
 
 export type Author =
@@ -48,6 +53,21 @@ export interface MessageDraft {
 }
 
 const PREVIEW_LENGTH = 280;
+
+/** How an inbound email message arrived (the email channel). */
+export interface InboundEmailMeta {
+  messageId: string | null;
+  inReplyTo: string | null;
+  /** DMARC or aligned DKIM passed. */
+  verified: boolean;
+}
+
+export interface InsertOptions {
+  ai?: boolean;
+  email?: InboundEmailMeta;
+  /** Written in the same batch as the message (e.g. the email's full text), given the new message id. */
+  extraStatements?: (messageId: string) => D1PreparedStatement[];
+}
 
 export function actorOf(author: Author): WebhookActor {
   if (author.type === "contact") return { type: "contact", id: author.contactId };
@@ -148,19 +168,22 @@ export async function createConversation(
   contactId: string,
   channel: Channel,
   draft: MessageDraft,
+  options: InsertOptions & { subject?: string | null } = {},
 ): Promise<{ conversation: ConversationRow; message: Message }> {
   const author: Author = { type: "contact", contactId };
   const attachments = await validateDraft(env, author, draft);
   const now = Date.now();
   const id = newId("cnv");
   await env.DB.prepare(
-    `INSERT INTO conversations (id, contact_id, status, channel, created_at, updated_at, last_message_at)
-     VALUES (?, ?, 'open', ?, ?, ?, ?)`,
+    `INSERT INTO conversations (id, contact_id, status, channel, created_at, updated_at, last_message_at, subject)
+     VALUES (?, ?, 'open', ?, ?, ?, ?, ?)`,
   )
-    .bind(id, contactId, channel, now, now, now)
+    .bind(id, contactId, channel, now, now, now, options.subject ?? null)
     .run();
   const conversation = await getConversation(env, id);
-  const result = await insertMessage(env, ctx, origin, conversation, author, "text", draft, attachments);
+  const { subject: _subject, ...insertOptions } = options;
+  const result = await insertMessage(env, ctx, origin, conversation, author, "text", draft, attachments, null, insertOptions);
+  ctx.waitUntil(sendPush(env, origin, { kind: "newConversation", conversation: result.conversation, preview: draft.body }));
   ctx.waitUntil(
     contactSummary(env, contactId).then((contact) =>
       sendWebhook(env, "conversation.created", {
@@ -188,6 +211,7 @@ export async function postMessage(
   author: Author,
   kind: Exclude<MessageKind, "event">,
   draft: MessageDraft,
+  options: InsertOptions = {},
 ): Promise<{ conversation: ConversationRow; message: Message }> {
   if (draft.clientId) {
     const existing = await env.DB.prepare("SELECT * FROM messages WHERE conversation_id = ? AND client_id = ?")
@@ -202,7 +226,11 @@ export async function postMessage(
     }
   }
   const attachments = await validateDraft(env, author, draft);
-  return insertMessage(env, ctx, origin, conversation, author, kind, draft, attachments);
+  const result = await insertMessage(env, ctx, origin, conversation, author, kind, draft, attachments, null, options);
+  if (author.type === "contact" && result.conversation.assignee_id) {
+    ctx.waitUntil(sendPush(env, origin, { kind: "assignedMessage", conversation: result.conversation, preview: draft.body }));
+  }
+  return result;
 }
 
 async function insertMessage(
@@ -215,16 +243,28 @@ async function insertMessage(
   draft: MessageDraft,
   attachments: AttachmentRow[],
   event: SystemEvent | null = null,
-  options: { ai?: boolean } = {},
+  options: InsertOptions = {},
 ): Promise<{ conversation: ConversationRow; message: Message; delivered: Promise<void> }> {
   const now = Math.max(Date.now(), conversation.updated_at);
   const id = newId("msg");
   const body = draft.body.trim();
   const agent = author.type === "contact" ? null : author.agent;
+  // A team reply in an email conversation goes out as an email (notes never do).
+  const emailOut = conversation.channel === "email" && kind === "text" && author.type === "agent";
+  const emailIn = author.type === "contact" ? (options.email ?? null) : null;
+  const email = {
+    direction: emailOut ? "outbound" : emailIn ? "inbound" : null,
+    messageId: emailIn?.messageId ?? null,
+    inReplyTo: emailIn?.inReplyTo ?? null,
+    status: emailOut ? "pending" : null,
+    nextAttemptAt: emailOut ? now : null,
+    verified: emailIn ? (emailIn.verified ? 1 : 0) : null,
+  } as const;
   const statements: D1PreparedStatement[] = [
     env.DB.prepare(
-      `INSERT INTO messages (id, conversation_id, author_type, agent_id, kind, body, event, client_id, created_at, ai)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO messages (id, conversation_id, author_type, agent_id, kind, body, event, client_id, created_at, ai,
+         email_direction, email_message_id, email_in_reply_to, email_status, email_next_attempt_at, email_verified)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).bind(
       id,
       conversation.id,
@@ -236,7 +276,14 @@ async function insertMessage(
       draft.clientId,
       now,
       options.ai ? 1 : 0,
+      email.direction,
+      email.messageId,
+      email.inReplyTo,
+      email.status,
+      email.nextAttemptAt,
+      email.verified,
     ),
+    ...(options.extraStatements?.(id) ?? []),
   ];
   if (attachments.length > 0) {
     statements.push(
@@ -332,6 +379,14 @@ async function insertMessage(
     client_id: draft.clientId,
     created_at: now,
     ai: options.ai ? 1 : 0,
+    email_direction: email.direction,
+    email_message_id: email.messageId,
+    email_in_reply_to: email.inReplyTo,
+    email_status: email.status,
+    email_error: null,
+    email_attempts: 0,
+    email_next_attempt_at: email.nextAttemptAt,
+    email_verified: email.verified,
   };
   const agents = await loadAgents(env);
   const [message] = await toMessages(env, origin, [row], agents);
@@ -354,6 +409,7 @@ async function insertMessage(
     );
     if (author.type === "agent") ctx.waitUntil(contactChannel(env, conversation.contact_id).scheduleUnreadCheck());
   }
+  if (emailOut) ctx.waitUntil(deliverEmailReply(env, ctx, origin, id));
   return { conversation: updated, message: message!, delivered };
 }
 
@@ -375,7 +431,7 @@ async function broadcastMessage(
           env,
           conversation.contact_id,
           isVisibleToContact(row)
-            ? { type: "message.created", message, conversation: contactConversation }
+            ? { type: "message.created", message: toContactMessage(message), conversation: contactConversation }
             : { type: "conversation.updated", conversation: contactConversation },
         ),
       );
@@ -518,7 +574,7 @@ export interface AssignmentChange {
 /**
  * Every change of assignee goes through here exactly once, after the row is written, whatever
  * made it: a teammate or a key (PATCH), the assignment rules, or a first reply. Writes the timeline
- * event (not for a first reply: the reply itself shows who took it). Hook assignment notifications here.
+ * event and sends the "assigned to you" push (not for a first reply: the replier took it themselves).
  */
 async function assignmentChanged(
   env: Env,
@@ -528,6 +584,7 @@ async function assignmentChanged(
   change: AssignmentChange,
 ): Promise<ConversationRow> {
   if (change.source.type === "first_reply") return conversation;
+  const actor = change.source.type === "teammate" ? { id: change.source.agent.id, name: change.source.agent.name } : { id: null, name: null };
   const { conversation: current } = await insertMessage(
     env,
     ctx,
@@ -537,8 +594,9 @@ async function assignmentChanged(
     "event",
     { body: "", attachmentIds: [], clientId: null },
     [],
-    { type: "assigned", agentName: change.source.type === "teammate" ? change.source.agent.name : null, assigneeName: change.assigneeName },
+    { type: "assigned", agentName: actor.name, assigneeName: change.assigneeName },
   );
+  if (current.assignee_id) ctx.waitUntil(sendPush(env, origin, { kind: "assigned", conversation: current, actor }));
   return current;
 }
 
@@ -687,10 +745,15 @@ export async function handOffToTeam(
   origin: string,
   conversation: ConversationRow,
 ): Promise<ConversationRow> {
+  const now = Date.now();
+  // Outside business hours the marker says when the team is back, and counts as the away message.
+  const away = teamAway((await getSettings(env)).businessHours, now);
   const changed = await env.DB.prepare(
-    "UPDATE conversations SET ai_state = 'handed_off', ai_lock_until = NULL, status = 'open', updated_at = ? WHERE id = ? AND ai_state = 'active'",
+    `UPDATE conversations SET ai_state = 'handed_off', ai_lock_until = NULL, status = 'open', updated_at = ?,
+       away_notified_at = CASE WHEN ? THEN ? ELSE away_notified_at END
+     WHERE id = ? AND ai_state = 'active'`,
   )
-    .bind(Date.now(), conversation.id)
+    .bind(now, away ? 1 : 0, now, conversation.id)
     .run();
   const current = await getConversation(env, conversation.id);
   if (!changed.meta.changes) return current;
@@ -703,8 +766,77 @@ export async function handOffToTeam(
     "event",
     { body: "", attachmentIds: [], clientId: null },
     [],
-    { type: "handed_off", agentName: null },
+    away?.backAt ? { type: "handed_off", agentName: null, backAt: away.backAt } : { type: "handed_off", agentName: null },
   );
+  ctx.waitUntil(sendPush(env, origin, { kind: "handoff", conversation: updated }));
   ctx.waitUntil(sendConversationUpdated(env, updated, { type: "contact", id: updated.contact_id }));
+  return updated;
+}
+
+/**
+ * Outside business hours, a customer writing to the team (not to the assistant) gets the away
+ * message once per closed period. The claim on `away_notified_at` makes two messages sent at the
+ * same time post it once.
+ */
+export async function postAwayMessage(
+  env: Env,
+  ctx: ExecutionContext,
+  origin: string,
+  conversationId: string,
+  /** The customer is signed in (the assistant may skip anonymous visitors). */
+  identified: boolean,
+): Promise<void> {
+  const settings = await getSettings(env);
+  const now = Date.now();
+  const away = teamAway(settings.businessHours, now);
+  if (!away) return;
+  const conversation = await getConversation(env, conversationId);
+  if (conversation.last_message_author !== "contact") return;
+  if (sameClosedPeriod(settings.businessHours, conversation.away_notified_at, now)) return;
+  // Someone on the team already answered since closing: they're here, don't say they're away.
+  if (sameClosedPeriod(settings.businessHours, conversation.last_agent_message_at, now)) return;
+  // The assistant answers this one; if it hands off, its marker says when the team is back.
+  const assistant = await getAssistant(env);
+  const assistantTakesIt =
+    isAssistantReady(assistant) &&
+    (conversation.ai_state === null || conversation.ai_state === "active") &&
+    (identified || assistant.allowAnonymous);
+  if (assistantTakesIt) return;
+  const claimed = await env.DB.prepare("UPDATE conversations SET away_notified_at = ? WHERE id = ? AND away_notified_at IS ?")
+    .bind(now, conversation.id, conversation.away_notified_at)
+    .run();
+  if (!claimed.meta.changes) return;
+  await insertMessage(
+    env,
+    ctx,
+    origin,
+    await getConversation(env, conversation.id),
+    { type: "system", agent: null },
+    "event",
+    { body: "", attachmentIds: [], clientId: null },
+    [],
+    { type: "away", agentName: null, message: settings.awayMessage, backAt: away.backAt },
+  );
+}
+
+/** A team-only marker in the timeline (e.g. an email that could not be delivered). */
+export async function postSystemEvent(
+  env: Env,
+  ctx: ExecutionContext,
+  origin: string,
+  conversation: ConversationRow,
+  event: SystemEvent,
+): Promise<ConversationRow> {
+  const { conversation: updated } = await insertMessage(
+    env,
+    ctx,
+    origin,
+    conversation,
+    { type: "system", agent: null },
+    "event",
+    { body: "", attachmentIds: [], clientId: null },
+    [],
+    event,
+  );
   return updated;
 }

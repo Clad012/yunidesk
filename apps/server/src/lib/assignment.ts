@@ -1,4 +1,4 @@
-import type { AssignmentConditions, AssignmentRule, AssignmentSettings, AssignStrategy, Attributes, Availability, RuleChannel } from "yunidesk";
+import type { AssignmentConditions, AssignmentRule, AssignmentSettings, AssignStrategy, Attributes, AgentAvailability, RuleChannel } from "yunidesk";
 
 // Automatic assignment, as pure functions: which rule a new conversation matches, and who in the
 // team gets it. The database side (a compare-and-set on the team's turn) is in db/routing.ts.
@@ -10,6 +10,8 @@ export interface ConversationFacts {
   isIdentified: boolean;
   tagIds: readonly string[];
   attributes: Attributes;
+  /** The customer's language when known (email), else null. */
+  locale: string | null;
 }
 
 export function channelMatches(rule: RuleChannel, channel: string): boolean {
@@ -27,6 +29,7 @@ function sameText(value: unknown, expected: string): boolean {
 /** Every condition must hold; conditions left open ("any", null) always do. */
 export function matchesConditions(conditions: AssignmentConditions, facts: ConversationFacts): boolean {
   if (!channelMatches(conditions.channel, facts.channel)) return false;
+  if (conditions.language !== "any" && facts.locale !== conditions.language) return false;
   if (conditions.contact === "identified" && !facts.isIdentified) return false;
   if (conditions.contact === "anonymous" && facts.isIdentified) return false;
   if (conditions.tagId !== null && !facts.tagIds.includes(conditions.tagId)) return false;
@@ -58,15 +61,19 @@ export function pickTarget(
 
 export interface Candidate {
   id: string;
-  availability: Availability;
+  availability: AgentAvailability;
   /** Open conversations assigned to them now. */
   openCount: number;
   /** null = no limit. */
   maxOpen: number | null;
+  /** Their role may reply (viewers can't). */
+  canReply: boolean;
 }
 
 export function canTakeMore(candidate: Candidate): boolean {
-  return candidate.availability === "available" && (candidate.maxOpen === null || candidate.openCount < candidate.maxOpen);
+  return (
+    candidate.canReply && candidate.availability === "available" && (candidate.maxOpen === null || candidate.openCount < candidate.maxOpen)
+  );
 }
 
 /**

@@ -14,5 +14,7 @@ DATA_JURISDICTION=
 # Optional: email anonymous visitors when they have an unread reply (Resend).
 # RESEND_API_KEY=
 # EMAIL_FROM=Yunidesk <support@example.com>
+# Optional: the email channel's inbound address (or set it in Settings → Email).
+# EMAIL_INBOUND_ADDRESS=support@example.com
 # Public URL of this worker, used in emails.
 PUBLIC_URL=http://localhost:8787

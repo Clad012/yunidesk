@@ -3,7 +3,8 @@ import { z } from "zod";
 import type { WebhookEndpointWithSecret } from "yunidesk";
 import { WEBHOOK_EVENT_NAMES } from "yunidesk/webhooks";
 import { readBody, type AppContext, type AppEnv } from "../../app-env";
-import { requireOwner } from "../../lib/agent-session";
+import { audit } from "../../lib/audit";
+import { requirePermission } from "../../lib/permissions";
 import { badRequest, conflict, notFound } from "../../lib/errors";
 import { newId } from "../../lib/ids";
 import {
@@ -45,9 +46,9 @@ const MAX_ENDPOINTS_PER_KEY = 5;
 
 export const webhookEndpointRoutes = new Hono<AppEnv>();
 
-/** Owners (dashboard) manage every endpoint; an API key manages only the endpoints it created. */
+/** Owners and admins (dashboard) manage every endpoint; an API key manages only the endpoints it created. */
 webhookEndpointRoutes.use("*", async (c, next) => {
-  if (!c.get("apiKey")) requireOwner(c.get("agent"));
+  requirePermission(c, "webhooks.manage");
   return next();
 });
 
@@ -113,6 +114,7 @@ webhookEndpointRoutes.post("/", async (c) => {
     )
     .run();
   const row = await findEndpoint(c, id);
+  audit(c, "webhook_endpoint.created", { type: "webhook_endpoint", id }, { url: input.url, events: input.events });
   return c.json<WebhookEndpointWithSecret>({ endpoint: toWebhookEndpoint(row), secret }, 201);
 });
 
@@ -132,6 +134,7 @@ webhookEndpointRoutes.patch("/:id", async (c) => {
   await c.env.DB.prepare(`UPDATE webhook_endpoints SET ${sets.join(", ")} WHERE id = ?`)
     .bind(...values, row.id)
     .run();
+  audit(c, "webhook_endpoint.updated", { type: "webhook_endpoint", id: row.id }, { keys: Object.keys(input).filter((k) => input[k as keyof typeof input] !== undefined) });
   return c.json(toWebhookEndpoint(await findEndpoint(c, row.id)));
 });
 
@@ -141,6 +144,7 @@ webhookEndpointRoutes.delete("/:id", async (c) => {
     c.env.DB.prepare("DELETE FROM webhook_deliveries WHERE endpoint_id = ?").bind(row.id),
     c.env.DB.prepare("DELETE FROM webhook_endpoints WHERE id = ?").bind(row.id),
   ]);
+  audit(c, "webhook_endpoint.deleted", { type: "webhook_endpoint", id: row.id }, { url: row.url });
   return c.json({ ok: true });
 });
 
@@ -163,6 +167,7 @@ webhookEndpointRoutes.post("/:id/roll-secret", async (c) => {
       row.id,
     )
     .run();
+  audit(c, "webhook_endpoint.secret_rolled", { type: "webhook_endpoint", id: row.id }, { expireCurrentInHours });
   return c.json<WebhookEndpointWithSecret>({ endpoint: toWebhookEndpoint(await findEndpoint(c, row.id)), secret });
 });
 

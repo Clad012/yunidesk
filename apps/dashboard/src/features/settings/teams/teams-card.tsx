@@ -3,7 +3,7 @@ import { useState } from "react";
 import type { Team } from "yunidesk";
 import { copy, fmt } from "@/lib/copy";
 import { errorMessage } from "@/lib/api";
-import { useIsOwner } from "@/hooks/use-bootstrap";
+import { useCan } from "@/hooks/use-bootstrap";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useTeams } from "@/features/teams/use-teams";
@@ -14,7 +14,7 @@ import { TeamMembers } from "./team-members";
 import { useTeamMutations } from "./use-team-settings";
 
 export function TeamsCard() {
-  const owner = useIsOwner();
+  const owner = useCan("teams.manage");
   const teams = useTeams();
   const { create, rename, remove, addMember, removeMember } = useTeamMutations();
   const [editing, setEditing] = useState<Team | "new" | null>(null);

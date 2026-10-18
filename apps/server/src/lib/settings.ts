@@ -1,4 +1,4 @@
-import type { AdminSettings, WidgetSettings } from "yunidesk";
+import { DEFAULT_BUSINESS_HOURS, type AdminSettings, type BusinessHours, type HelpCenterSettings, type LocalizedText, type WidgetSettings } from "yunidesk";
 import type { Env } from "../env";
 
 export interface StoredSettings extends WidgetSettings {
@@ -6,6 +6,10 @@ export interface StoredSettings extends WidgetSettings {
   webhookUrl: string | null;
   webhookSecret: string | null;
   retentionDays: number;
+  businessHours: BusinessHours;
+  awayMessage: LocalizedText;
+  helpCenter: HelpCenterSettings;
+  auditRetentionDays: number;
 }
 
 export const DEFAULT_SETTINGS: StoredSettings = {
@@ -21,6 +25,10 @@ export const DEFAULT_SETTINGS: StoredSettings = {
   webhookUrl: null,
   webhookSecret: null,
   retentionDays: 730,
+  businessHours: DEFAULT_BUSINESS_HOURS,
+  awayMessage: {},
+  helpCenter: { enabled: false, title: {}, description: {} },
+  auditRetentionDays: 365,
 };
 
 const KEY = "workspace";
@@ -30,8 +38,7 @@ let cache: { value: StoredSettings; at: number } | null = null;
 export async function getSettings(env: Env): Promise<StoredSettings> {
   if (cache && Date.now() - cache.at < CACHE_MS) return cache.value;
   const row = await env.DB.prepare("SELECT value FROM settings WHERE key = ?").bind(KEY).first<{ value: string }>();
-  const stored = row ? (JSON.parse(row.value) as Partial<StoredSettings>) : {};
-  const value = { ...DEFAULT_SETTINGS, ...stored };
+  const value = parseSettings(row?.value ?? null);
   cache = { value, at: Date.now() };
   return value;
 }
@@ -67,12 +74,21 @@ export function toWidgetSettings(settings: StoredSettings): WidgetSettings {
 
 /** Origins that may embed the widget: the env list plus the ones set in the dashboard. */
 export async function embedOrigins(env: Env): Promise<string[]> {
+  return embedOriginsFrom(env, await getSettings(env));
+}
+
+export function embedOriginsFrom(env: Env, settings: StoredSettings): string[] {
   const fromEnv = (env.ALLOWED_ORIGINS ?? "")
     .split(",")
     .map((o) => o.trim())
     .filter(Boolean);
-  const settings = await getSettings(env);
   return [...new Set([...fromEnv, ...settings.allowedOrigins])].filter(isOrigin);
+}
+
+/** The stored JSON over the defaults (the help center reads it uncached, with its version). */
+export function parseSettings(value: string | null): StoredSettings {
+  const stored = value ? (JSON.parse(value) as Partial<StoredSettings>) : {};
+  return { ...DEFAULT_SETTINGS, ...stored };
 }
 
 /** An exact origin. Plain http is only accepted for local development hosts. */

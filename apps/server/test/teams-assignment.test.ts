@@ -2,7 +2,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import { describe, expect, it } from "vitest";
 import type { AssignmentConditions, AssignmentRule } from "yunidesk";
-import { APPLY_ROUTE_SQL, CLAIM_TURN_SQL, TEAM_CANDIDATES_SQL, type CandidateRow } from "../src/db/assignment-sql";
+import { APPLY_ROUTE_SQL, CLAIM_TURN_SQL, TEAM_CANDIDATES_SQL, toCandidate, type CandidateRow } from "../src/db/assignment-sql";
 import { isVisibleToContact } from "../src/db/conversations";
 import { requiredScope } from "../src/lib/api-keys";
 import {
@@ -15,12 +15,13 @@ import {
   type TurnStore,
 } from "../src/lib/assignment";
 
-const OPEN: AssignmentConditions = { channel: "any", contact: "any", tagId: null, attribute: null };
+const OPEN: AssignmentConditions = { channel: "any", language: "any", contact: "any", tagId: null, attribute: null };
 const facts = (patch: Partial<ConversationFacts> = {}): ConversationFacts => ({
   channel: "web",
   isIdentified: true,
   tagIds: [],
   attributes: {},
+  locale: null,
   ...patch,
 });
 
@@ -33,6 +34,13 @@ describe("rule conditions", () => {
     expect(matchesConditions({ ...OPEN, channel: "app" }, facts({ channel: "web" }))).toBe(false);
     expect(matchesConditions({ ...OPEN, channel: "email" }, facts({ channel: "web" }))).toBe(false);
     expect(matchesConditions({ ...OPEN, channel: "email" }, facts({ channel: "email" }))).toBe(true);
+  });
+
+  it("matches the language only when it is known", () => {
+    expect(matchesConditions({ ...OPEN, language: "fr" }, facts({ channel: "email", locale: "fr" }))).toBe(true);
+    expect(matchesConditions({ ...OPEN, language: "fr" }, facts({ channel: "email", locale: "en" }))).toBe(false);
+    expect(matchesConditions({ ...OPEN, language: "en" }, facts({ locale: null }))).toBe(false);
+    expect(matchesConditions(OPEN, facts({ locale: null }))).toBe(true);
   });
 
   it("tells identified contacts from anonymous visitors", () => {
@@ -59,7 +67,7 @@ describe("rule conditions", () => {
   });
 
   it("needs every condition at once", () => {
-    const strict: AssignmentConditions = { channel: "app", contact: "identified", tagId: "tag_a", attribute: { key: "plan", value: "pro" } };
+    const strict: AssignmentConditions = { channel: "app", language: "any", contact: "identified", tagId: "tag_a", attribute: { key: "plan", value: "pro" } };
     const all = facts({ channel: "ios", tagIds: ["tag_a"], attributes: { plan: "pro" } });
     expect(matchesConditions(strict, all)).toBe(true);
     expect(matchesConditions(strict, { ...all, isIdentified: false })).toBe(false);
@@ -92,7 +100,7 @@ describe("rule order", () => {
 });
 
 describe("choosing a teammate", () => {
-  const member = (id: string, patch: Partial<Candidate> = {}): Candidate => ({ id, availability: "available", openCount: 0, maxOpen: null, ...patch });
+  const member = (id: string, patch: Partial<Candidate> = {}): Candidate => ({ id, availability: "available", openCount: 0, maxOpen: null, canReply: true, ...patch });
 
   it("round robin goes to whoever is next after the last pick, and wraps around", () => {
     const team = [member("agt_c"), member("agt_a"), member("agt_b")];
@@ -156,7 +164,7 @@ function sqliteStore(db: DatabaseSync): TurnStore {
       return {
         version: team.assign_version,
         lastAgentId: team.last_assigned_agent_id,
-        members: rows.map((r) => ({ id: r.id, availability: r.availability, openCount: r.open_count, maxOpen: r.max_open })),
+        members: rows.map(toCandidate),
       };
     },
     async apply({ teamId, conversationId, assigneeId, expectedVersion, nextVersion }) {
@@ -218,9 +226,11 @@ describe("assigning when conversations arrive at the same moment", () => {
     expect([assigneeOf(db, "cnv_1"), assigneeOf(db, "cnv_2")].sort()).toEqual(["agt_a", "agt_b"]);
   });
 
-  it("never picks a disabled teammate", async () => {
+  it("never picks a disabled teammate or a read-only viewer", async () => {
     const db = database();
     db.prepare("UPDATE agents SET disabled_at = 1 WHERE id = 'agt_a'").run();
+    db.prepare("UPDATE agents SET role = 'viewer' WHERE id = 'agt_c'").run();
+    expect(await assignInTeam(sqliteStore(db), "cnv_2", { teamId: "tem_1", assign: "round_robin" }, nextVersion)).toEqual({ assigneeId: "agt_b" });
     const result = await assignInTeam(sqliteStore(db), "cnv_1", { teamId: "tem_1", assign: "round_robin" }, nextVersion);
     expect(result).toEqual({ assigneeId: "agt_b" });
   });

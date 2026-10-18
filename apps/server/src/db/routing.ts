@@ -1,6 +1,6 @@
 import type { Env } from "../env";
 import { assignInTeam, pickTarget, type ConversationFacts, type TurnStore } from "../lib/assignment";
-import { APPLY_ROUTE_SQL, CLAIM_TURN_SQL, TEAM_CANDIDATES_SQL, type CandidateRow } from "./assignment-sql";
+import { APPLY_ROUTE_SQL, CLAIM_TURN_SQL, TEAM_CANDIDATES_SQL, toCandidate, type CandidateRow } from "./assignment-sql";
 import { announceRouting, getConversation, handOffToTeam } from "./conversations";
 import type { ContactRow, ConversationRow, TeamRow } from "./rows";
 import { loadAssignment } from "./teams";
@@ -15,7 +15,7 @@ export function d1TurnStore(env: Env): TurnStore {
       return {
         version: team.assign_version,
         lastAgentId: team.last_assigned_agent_id,
-        members: results.map((r) => ({ id: r.id, availability: r.availability, openCount: r.open_count, maxOpen: r.max_open })),
+        members: results.map(toCandidate),
       };
     },
     async apply({ teamId, conversationId, assigneeId, expectedVersion, nextVersion }) {
@@ -33,9 +33,14 @@ export function d1TurnStore(env: Env): TurnStore {
 }
 
 async function conversationFacts(env: Env, conversation: ConversationRow): Promise<ConversationFacts> {
-  const [contact, tags] = await env.DB.batch([
+  const [contact, tags, email] = await env.DB.batch([
     env.DB.prepare("SELECT is_identified, attributes FROM contacts WHERE id = ?").bind(conversation.contact_id),
     env.DB.prepare("SELECT tag_id FROM conversation_tags WHERE conversation_id = ?").bind(conversation.id),
+    // The language detected on the first inbound email (other channels don't know it).
+    env.DB.prepare(
+      `SELECT e.locale FROM email_originals e JOIN messages m ON m.id = e.message_id
+       WHERE m.conversation_id = ? ORDER BY m.created_at LIMIT 1`,
+    ).bind(conversation.id),
   ]);
   const row = contact?.results[0] as Pick<ContactRow, "is_identified" | "attributes"> | undefined;
   let attributes: ConversationFacts["attributes"] = {};
@@ -50,6 +55,7 @@ async function conversationFacts(env: Env, conversation: ConversationRow): Promi
     isIdentified: row?.is_identified === 1,
     tagIds: (tags?.results as { tag_id: string }[] | undefined)?.map((t) => t.tag_id) ?? [],
     attributes,
+    locale: (email?.results[0] as { locale: string | null } | undefined)?.locale ?? null,
   };
 }
 

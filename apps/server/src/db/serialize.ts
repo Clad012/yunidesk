@@ -117,8 +117,24 @@ export async function toMessages(
       clientId: row.client_id,
       createdAt: row.created_at,
       ...(row.ai ? { ai: true } : {}),
+      ...(row.email_direction
+        ? {
+            email: {
+              direction: row.email_direction,
+              status: row.email_status,
+              error: row.email_error,
+              verified: row.email_direction === "inbound" ? row.email_verified === 1 : null,
+            },
+          }
+        : {}),
     };
   });
+}
+
+/** What a contact gets: email delivery details are team-only. */
+export function toContactMessage(message: Message): Message {
+  const { email: _email, ...rest } = message;
+  return rest;
 }
 
 function toPreview(row: ConversationRow): MessagePreview | null {
@@ -176,6 +192,7 @@ export async function toAgentConversations(
       priority: row.priority ?? "normal",
       customFields: parseCustomFields(row.custom_fields),
       team: (row.team_id ? teams.get(row.team_id) : undefined) ?? null,
+      ...(row.channel === "email" ? { subject: row.subject } : {}),
     });
   }
   return out;

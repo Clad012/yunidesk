@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import type { Availability } from "yunidesk";
+import type { AgentAvailability } from "yunidesk";
 import { copy } from "@/lib/copy";
 import { errorMessage } from "@/lib/api";
 import { endpoints, queryKeys, type Bootstrap } from "@/lib/endpoints";
@@ -33,7 +33,7 @@ export function AvailabilityItems() {
       <DropdownMenuLabel title={copy.availability.awayHint}>{copy.availability.label}</DropdownMenuLabel>
       <DropdownMenuRadioGroup
         value={agent.availability}
-        onValueChange={(value) => value !== agent.availability && mutation.mutate(value as Availability)}
+        onValueChange={(value) => value !== agent.availability && mutation.mutate(value as AgentAvailability)}
       >
         <DropdownMenuRadioItem value="available" disabled={mutation.isPending}>
           <span className="size-2 rounded-full bg-success" /> {copy.availability.available}

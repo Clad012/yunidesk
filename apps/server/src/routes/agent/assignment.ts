@@ -1,11 +1,12 @@
 import { Hono } from "hono";
 import { z } from "zod";
-import { ASSIGN_STRATEGIES, AVAILABILITIES, MAX_ASSIGNMENT_RULES, RULE_CHANNELS, type AssignmentSettings } from "yunidesk";
+import { ASSIGN_STRATEGIES, AGENT_AVAILABILITIES, MAX_ASSIGNMENT_RULES, RULE_CHANNELS, SUPPORTED_LOCALES, type AssignmentSettings, type Locale } from "yunidesk";
 import { readBody, type AppEnv } from "../../app-env";
 import type { AgentRow } from "../../db/rows";
 import { toAgent } from "../../db/serialize";
 import { loadAssignment, saveFallbackStatement, toTeammate } from "../../db/teams";
-import { requireOwner } from "../../lib/agent-session";
+import { audit } from "../../lib/audit";
+import { requirePermission } from "../../lib/permissions";
 import { badRequest, notFound } from "../../lib/errors";
 import { newId } from "../../lib/ids";
 import { notifyAgents } from "../../lib/realtime";
@@ -14,6 +15,7 @@ const RULE_ID = /^rul_[0-9a-z]{26}$/;
 
 const conditionsSchema = z.object({
   channel: z.enum(RULE_CHANNELS).default("any"),
+  language: z.enum(["any", ...(SUPPORTED_LOCALES as readonly Locale[])] as ["any", ...Locale[]]).default("any"),
   contact: z.enum(["any", "identified", "anonymous"]).default("any"),
   tagId: z.string().max(64).nullable().default(null),
   attribute: z.object({ key: z.string().trim().min(1).max(64), value: z.string().trim().max(200) }).nullable().default(null),
@@ -30,7 +32,7 @@ const assignmentSchema = z.object({
   fallback: z.object({ teamId: z.string().max(64).nullable(), assign: z.enum(ASSIGN_STRATEGIES) }),
 });
 const capacitySchema = z.object({ maxOpen: z.number().int().min(1).max(1000).nullable() });
-const availabilitySchema = z.object({ availability: z.enum(AVAILABILITIES) });
+const availabilitySchema = z.object({ availability: z.enum(AGENT_AVAILABILITIES) });
 
 // ---- /assignment: the rules and the fallback (read by teammates, changed by owners; never keys) ----
 
@@ -40,8 +42,9 @@ assignmentRoutes.get("/", async (c) => c.json<AssignmentSettings>(await loadAssi
 
 /** Replaces the whole ordered list, so reordering and editing are one atomic save. */
 assignmentRoutes.put("/", async (c) => {
-  requireOwner(c.get("agent"));
+  requirePermission(c, "teams.manage");
   const input = await readBody(c, assignmentSchema);
+  const before = await loadAssignment(c.env);
   const [teams, tags] = await c.env.DB.batch([c.env.DB.prepare("SELECT id FROM teams"), c.env.DB.prepare("SELECT id FROM tags")]);
   const teamIds = new Set((teams!.results as { id: string }[]).map((t) => t.id));
   const tagIds = new Set((tags!.results as { id: string }[]).map((t) => t.id));
@@ -64,17 +67,26 @@ assignmentRoutes.put("/", async (c) => {
     ),
     saveFallbackStatement(c.env, { teamId: input.fallback.teamId, assign: input.fallback.teamId ? input.fallback.assign : "none" }),
   ]);
-  return c.json<AssignmentSettings>(await loadAssignment(c.env));
+  const after = await loadAssignment(c.env);
+  // Ids aside (they're reissued for new rules), did the list or the fallback change?
+  const shape = (s: AssignmentSettings) => JSON.stringify(s.rules.map(({ id: _id, ...rule }) => rule));
+  if (shape(before) !== shape(after)) audit(c, "assignment.rules_updated", null, { rules: after.rules.length });
+  if (JSON.stringify(before.fallback) !== JSON.stringify(after.fallback)) {
+    audit(c, "assignment.fallback_updated", after.fallback.teamId ? { type: "team", id: after.fallback.teamId } : null, { ...after.fallback });
+  }
+  return c.json<AssignmentSettings>(after);
 });
 
 /** A teammate's limit of open conversations from automatic assignment (null: none). */
 assignmentRoutes.patch("/teammates/:id", async (c) => {
-  requireOwner(c.get("agent"));
+  requirePermission(c, "teams.manage");
   const { maxOpen } = await readBody(c, capacitySchema);
+  const before = await c.env.DB.prepare("SELECT max_open FROM agents WHERE id = ? AND kind = 'human'").bind(c.req.param("id")).first<{ max_open: number | null }>();
   const row = await c.env.DB.prepare("UPDATE agents SET max_open = ? WHERE id = ? AND kind = 'human' RETURNING *")
     .bind(maxOpen, c.req.param("id"))
     .first<AgentRow>();
   if (!row) throw notFound("Teammate not found");
+  if (before && before.max_open !== row.max_open) audit(c, "assignment.capacity_changed", { type: "agent", id: row.id }, { from: before.max_open, to: row.max_open });
   return c.json({ ...toTeammate(row), maxOpen: row.max_open });
 });
 
@@ -86,6 +98,6 @@ availabilityRoutes.put("/", async (c) => {
   const agent = c.get("agent");
   const { availability } = await readBody(c, availabilitySchema);
   const row = await c.env.DB.prepare("UPDATE agents SET availability = ? WHERE id = ? RETURNING *").bind(availability, agent.id).first<AgentRow>();
-  c.executionCtx.waitUntil(notifyAgents(c.env, { type: "availability", agentId: agent.id, availability }));
+  c.executionCtx.waitUntil(notifyAgents(c.env, { type: "agent.availability", agentId: agent.id, availability }));
   return c.json({ agent: toAgent(row!) });
 });

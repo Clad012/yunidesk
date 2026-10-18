@@ -5,7 +5,7 @@ import type { TeamMember } from "yunidesk";
 import { copy, fmt } from "@/lib/copy";
 import { errorMessage } from "@/lib/api";
 import { endpoints, queryKeys } from "@/lib/endpoints";
-import { useIsOwner } from "@/hooks/use-bootstrap";
+import { useCan } from "@/hooks/use-bootstrap";
 import { PersonAvatar } from "@/components/person-avatar";
 import { Input } from "@/components/ui/input";
 import { useTeams } from "@/features/teams/use-teams";
@@ -52,7 +52,7 @@ function LimitInput({ member, editable }: { member: TeamMember; editable: boolea
 
 /** Per-teammate limits on automatic assignment, for everyone in at least one team. */
 export function CapacityCard() {
-  const owner = useIsOwner();
+  const owner = useCan("teams.manage");
   const teams = useTeams();
   const members = new Map<string, TeamMember>();
   for (const team of teams.data?.items ?? []) for (const m of team.members) members.set(m.id, m);

@@ -129,7 +129,7 @@ export function applyEvent(qc: QueryClient, event: AgentServerEvent, meId: strin
     case "contact.deleted":
       applyContactDeleted(qc, event.contactId);
       return;
-    case "availability":
+    case "agent.availability":
       qc.setQueryData<Bootstrap>(queryKeys.bootstrap, (b) =>
         b
           ? {

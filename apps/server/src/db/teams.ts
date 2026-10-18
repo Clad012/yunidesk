@@ -65,6 +65,7 @@ export function toAssignmentRule(row: AssignmentRuleRow): AssignmentRule {
     name: row.name,
     conditions: {
       channel: conditions.channel ?? "any",
+      language: conditions.language ?? "any",
       contact: conditions.contact ?? "any",
       tagId: conditions.tagId ?? null,
       attribute: conditions.attribute ?? null,

@@ -1,7 +1,9 @@
 // The SQL behind automatic assignment, kept apart so tests run the exact statements on SQLite.
+import { can, type AgentRole } from "yunidesk";
+import type { Candidate } from "../lib/assignment";
 
 /** Members who can be picked, with their open conversations (every team). Binds: teamId. */
-export const TEAM_CANDIDATES_SQL = `SELECT a.id, a.availability, a.max_open,
+export const TEAM_CANDIDATES_SQL = `SELECT a.id, a.role, a.availability, a.max_open,
     (SELECT COUNT(*) FROM conversations c WHERE c.assignee_id = a.id AND c.status = 'open') AS open_count
   FROM team_members m JOIN agents a ON a.id = m.agent_id
   WHERE m.team_id = ? AND a.disabled_at IS NULL AND a.kind = 'human'`;
@@ -24,7 +26,19 @@ export const APPLY_ROUTE_SQL = `UPDATE conversations SET team_id = ?, assignee_i
 
 export interface CandidateRow {
   id: string;
+  role: AgentRole;
   availability: "available" | "away";
   max_open: number | null;
   open_count: number;
+}
+
+export function toCandidate(row: CandidateRow): Candidate {
+  return {
+    id: row.id,
+    availability: row.availability,
+    openCount: row.open_count,
+    maxOpen: row.max_open,
+    // Viewers are read-only: never hand them a conversation.
+    canReply: can(row.role, "inbox.reply"),
+  };
 }

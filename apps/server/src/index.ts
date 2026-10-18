@@ -8,10 +8,14 @@ import { retryDueDeliveries } from "./lib/webhooks";
 import { ApiError } from "./lib/errors";
 import { embedOrigins } from "./lib/settings";
 import { agentAuthRoutes } from "./routes/agent-auth";
+import { agentSsoRoutes } from "./routes/agent-sso";
 import { agentRoutes } from "./routes/agent";
 import { contactRoutes } from "./routes/contact";
 import { fileRoutes } from "./routes/files";
+import { helpCenterRoutes, robotsTxt } from "./help-center/routes";
 import { openApiDocument } from "./openapi";
+import { handleInboundEmail } from "./lib/email-channel/inbound";
+import { retryDueEmails } from "./lib/email-channel/outbound";
 
 export { ContactChannel } from "./durable/contact-channel";
 export { InboxHub } from "./durable/inbox-hub";
@@ -77,10 +81,20 @@ app.get("/api/openapi.json", (c) => {
   return c.json(openApiDocument);
 });
 app.route("/api/v1", contactRoutes);
+// Before the other auth routes: the provider redirects here cross-site, so no Origin check applies.
+app.route("/api/agent/auth/sso", agentSsoRoutes);
 app.route("/api/agent/auth", agentAuthRoutes);
 app.route("/api/agent", agentRoutes);
 app.route("/api", fileRoutes);
 app.all("/api/*", (c) => c.json({ error: { code: "not_found", message: "Not found" } }, 404));
+
+// Public help center (server-rendered knowledge pages) and, while it is on, robots.txt + sitemap.
+app.route("/help", helpCenterRoutes);
+app.use("/robots.txt", async (c, next) => {
+  const robots = await robotsTxt(c);
+  if (robots) return robots;
+  await next();
+});
 
 /** The widget page runs inside an iframe on your site; only the allowed origins may frame it. */
 app.get("/widget/", async (c) => {
@@ -117,6 +131,9 @@ const DASHBOARD_CSP = [
   "connect-src 'self'",
   "font-src 'self' data:",
   "frame-src 'self'",
+  // The service worker (/sw.js) shows push notifications; the manifest makes the dashboard installable.
+  "worker-src 'self'",
+  "manifest-src 'self'",
   "object-src 'none'",
   "base-uri 'none'",
   "form-action 'self'",
@@ -129,12 +146,25 @@ app.all("*", async (c) => {
   const headers = new Headers(response.headers);
   headers.set("x-content-type-options", "nosniff");
   headers.set("referrer-policy", "strict-origin-when-cross-origin");
-  if ((headers.get("content-type") ?? "").includes("text/html")) {
+  const isHtml = (headers.get("content-type") ?? "").includes("text/html");
+  if (isHtml) {
     headers.set("content-security-policy", DASHBOARD_CSP);
     headers.set("x-frame-options", "DENY");
     headers.set("cache-control", "no-cache");
   }
-  if (new URL(c.req.url).pathname === "/widget.js") headers.set("cache-control", "public, max-age=300");
+  const pathname = new URL(c.req.url).pathname;
+  if (pathname === "/widget.js") headers.set("cache-control", "public, max-age=300");
+  if (pathname === "/sw.js" && response.ok && !isHtml) {
+    // Always revalidated, so a new worker reaches every browser on the next visit. Scope: the whole dashboard.
+    headers.set("content-type", "text/javascript; charset=utf-8");
+    headers.set("cache-control", "no-cache");
+    headers.set("service-worker-allowed", "/");
+    headers.set("content-security-policy", "default-src 'self'; script-src 'self'; connect-src 'self'; object-src 'none'");
+  }
+  if (pathname === "/manifest.webmanifest" && response.ok && !isHtml) {
+    headers.set("content-type", "application/manifest+json; charset=utf-8");
+    headers.set("cache-control", "public, max-age=3600");
+  }
   return new Response(response.body, { status: response.status, headers });
 });
 
@@ -145,11 +175,17 @@ export default {
     if (controller.cron === "* * * * *") {
       const retried = await retryDueDeliveries(env);
       if (retried) console.log(`retried ${retried} webhook deliveries`);
+      const emails = await retryDueEmails(env, ctx, origin);
+      if (emails) console.log(`retried ${emails} email replies`);
     } else if (controller.cron === "*/5 * * * *") {
       const woken = await wakeSnoozed(env, ctx, origin);
       if (woken) console.log(`woke ${woken} snoozed conversations`);
     } else {
       console.log("retention", await runRetention(env));
     }
+  },
+  /** Cloudflare Email Routing: customers' emails to the support address and to reply+…@ addresses. */
+  async email(message, env, ctx) {
+    await handleInboundEmail(message, env, ctx);
   },
 } satisfies ExportedHandler<Env>;

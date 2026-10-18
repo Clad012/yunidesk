@@ -2,7 +2,7 @@ import { ChevronDownIcon, ChevronUpIcon, PencilIcon, PlusIcon, Trash2Icon } from
 import { useState } from "react";
 import type { AssignmentRule, AssignmentRuleInput, AssignmentSettings } from "yunidesk";
 import { copy, fmt } from "@/lib/copy";
-import { useIsOwner } from "@/hooks/use-bootstrap";
+import { useCan } from "@/hooks/use-bootstrap";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useTags } from "@/features/tags/use-tags";
@@ -15,7 +15,7 @@ import { toInput, useAssignment, useSaveAssignment } from "./use-team-settings";
 
 /** The ordered rules: add, edit, reorder and delete each save the whole list. */
 export function RulesCard() {
-  const owner = useIsOwner();
+  const owner = useCan("teams.manage");
   const assignment = useAssignment();
   const teams = useTeams();
   const tags = useTags();

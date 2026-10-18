@@ -35,6 +35,16 @@ export function RuleConditions({ conditions, attribute, onChange, onAttributeCha
           </Select>
         )}
       </Field>
+      <Field label={copy.assignment.language} hint={copy.assignment.languageHint}>
+        {(id) => (
+          <Select value={conditions.language} onValueChange={(v) => onChange({ language: v as AssignmentConditions["language"] })}>
+            <SelectTrigger id={id}><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {(["any", "en", "fr"] as const).map((l) => <SelectItem key={l} value={l}>{copy.assignment[`language_${l}`]}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        )}
+      </Field>
       <Field label={copy.assignment.contact}>
         {(id) => (
           <Select value={conditions.contact} onValueChange={(v) => onChange({ contact: v as AssignmentConditions["contact"] })}>

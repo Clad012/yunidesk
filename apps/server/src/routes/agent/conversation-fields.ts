@@ -3,7 +3,8 @@ import { z } from "zod";
 import { CONVERSATION_FIELD_TYPES } from "yunidesk";
 import { readBody, type AppEnv } from "../../app-env";
 import type { ConversationFieldRow } from "../../db/rows";
-import { requireOwner } from "../../lib/agent-session";
+import { audit } from "../../lib/audit";
+import { requirePermission } from "../../lib/permissions";
 import {
   FIELD_KEY_PATTERN,
   MAX_FIELDS,
@@ -39,7 +40,7 @@ export const conversationFieldRoutes = new Hono<AppEnv>();
 conversationFieldRoutes.get("/", async (c) => c.json({ items: (await listFields(c.env.DB)).map(toConversationField) }));
 
 conversationFieldRoutes.post("/", async (c) => {
-  requireOwner(c.get("agent"));
+  requirePermission(c, "settings.manage");
   const input = await readBody(c, createSchema);
   const options = input.type === "select" ? (input.options ?? []) : [];
   if (input.type === "select" && options.length === 0) throw badRequest("A select field needs at least one option");
@@ -64,11 +65,12 @@ conversationFieldRoutes.post("/", async (c) => {
     if (String(error).includes("UNIQUE")) throw conflict("A field with this key already exists");
     throw error;
   }
+  audit(c, "conversation_field.created", { type: "conversation_field", id: row.id }, { key: row.key, type: row.type });
   return c.json(toConversationField(row), 201);
 });
 
 conversationFieldRoutes.post("/reorder", async (c) => {
-  requireOwner(c.get("agent"));
+  requirePermission(c, "settings.manage");
   const { ids } = await readBody(c, reorderSchema);
   const existing = await listFields(c.env.DB);
   const known = new Set(existing.map((f) => f.id));
@@ -82,7 +84,7 @@ conversationFieldRoutes.post("/reorder", async (c) => {
 });
 
 conversationFieldRoutes.patch("/:id", async (c) => {
-  requireOwner(c.get("agent"));
+  requirePermission(c, "settings.manage");
   const input = await readBody(c, patchSchema);
   const row = await c.env.DB.prepare("SELECT * FROM conversation_fields WHERE id = ?").bind(c.req.param("id")).first<ConversationFieldRow>();
   if (!row) throw notFound("Field not found");
@@ -94,11 +96,12 @@ conversationFieldRoutes.patch("/:id", async (c) => {
     options: input.options !== undefined ? JSON.stringify(input.options) : row.options,
   };
   await c.env.DB.prepare("UPDATE conversation_fields SET label = ?, options = ? WHERE id = ?").bind(next.label, next.options, row.id).run();
+  audit(c, "conversation_field.updated", { type: "conversation_field", id: row.id }, { keys: Object.keys(input) });
   return c.json(toConversationField(next));
 });
 
 conversationFieldRoutes.delete("/:id", async (c) => {
-  requireOwner(c.get("agent"));
+  requirePermission(c, "settings.manage");
   const row = await c.env.DB.prepare("SELECT * FROM conversation_fields WHERE id = ?").bind(c.req.param("id")).first<ConversationFieldRow>();
   if (!row) return c.json({ ok: true });
   // The key matched FIELD_KEY_PATTERN when it was created, so it is a plain JSON path segment.
@@ -107,5 +110,6 @@ conversationFieldRoutes.delete("/:id", async (c) => {
     c.env.DB.prepare("DELETE FROM conversation_fields WHERE id = ?").bind(row.id),
     c.env.DB.prepare("UPDATE conversations SET custom_fields = json_remove(custom_fields, ?) WHERE json_type(custom_fields, ?) IS NOT NULL").bind(path, path),
   ]);
+  audit(c, "conversation_field.deleted", { type: "conversation_field", id: row.id }, { key: row.key });
   return c.json({ ok: true });
 });

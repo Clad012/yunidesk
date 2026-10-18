@@ -90,15 +90,34 @@ export async function storeUpload(
 ): Promise<AttachmentRow> {
   const file = form.get("file");
   if (!file || typeof file === "string") throw badRequest("No file in the upload");
-  const rawName = sanitizeFileName(file.name || "file");
-  if (file.size === 0) throw badRequest("The file is empty");
   if (file.size > MAX_ATTACHMENT_BYTES) throw badRequest(`Files are limited to ${formatBytes(MAX_ATTACHMENT_BYTES)}`, "file_too_large");
+  const dimension = (name: string) => Number(form.get(name));
+  return storeAttachment(env, new Uint8Array(await file.arrayBuffer()), file.name || "file", file.type, uploader, {
+    width: dimension("width"),
+    height: dimension("height"),
+  });
+}
 
-  const contentType = resolveContentType(rawName, file.type);
+/**
+ * Checks and stores one file (size, allowed type, content matching the type) in R2 and as an
+ * unsent attachment row. Used by uploads and by inbound email attachments.
+ */
+export async function storeAttachment(
+  env: Env,
+  bytes: Uint8Array,
+  name: string,
+  declaredType: string,
+  uploader: { type: "contact" | "agent"; id: string },
+  size: { width?: number; height?: number } = {},
+): Promise<AttachmentRow> {
+  const rawName = sanitizeFileName(name || "file");
+  if (bytes.byteLength === 0) throw badRequest("The file is empty");
+  if (bytes.byteLength > MAX_ATTACHMENT_BYTES) throw badRequest(`Files are limited to ${formatBytes(MAX_ATTACHMENT_BYTES)}`, "file_too_large");
+
+  const contentType = resolveContentType(rawName, declaredType);
   if (!isAllowedAttachmentType(contentType)) throw badRequest("This file type is not supported", "file_type");
   const fileName = alignExtension(rawName, contentType);
 
-  const bytes = new Uint8Array(await file.arrayBuffer());
   if (!matchesSignature(contentType, bytes.subarray(0, 16)) || (TEXT_TYPES.has(contentType) && !isPlainText(bytes))) {
     throw badRequest("The file content does not match its type", "file_type");
   }
@@ -107,10 +126,8 @@ export async function storeUpload(
   const key = `attachments/${uploader.type}/${uploader.id}/${id}`;
   await env.FILES.put(key, bytes, { httpMetadata: { contentType } });
 
-  const dimension = (name: string) => {
-    const value = Number(form.get(name));
-    return isInlineImage(contentType) && Number.isInteger(value) && value > 0 && value < 20_000 ? value : null;
-  };
+  const dimension = (value: number | undefined) =>
+    isInlineImage(contentType) && Number.isInteger(value) && value! > 0 && value! < 20_000 ? value! : null;
   const row: AttachmentRow = {
     id,
     message_id: null,
@@ -120,16 +137,16 @@ export async function storeUpload(
     r2_key: key,
     file_name: fileName,
     content_type: contentType,
-    size: file.size,
-    width: dimension("width"),
-    height: dimension("height"),
+    size: bytes.byteLength,
+    width: dimension(size.width),
+    height: dimension(size.height),
     created_at: Date.now(),
   };
   await env.DB.prepare(
     `INSERT INTO attachments (id, message_id, conversation_id, uploader_type, uploader_id, r2_key, file_name, content_type, size, width, height, created_at)
      VALUES (?, NULL, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   )
-    .bind(id, uploader.type, uploader.id, key, fileName, contentType, file.size, row.width, row.height, row.created_at)
+    .bind(id, uploader.type, uploader.id, key, fileName, contentType, row.size, row.width, row.height, row.created_at)
     .run();
   return row;
 }

@@ -8,7 +8,7 @@ import type {
   AssignmentRuleInput,
   AssignmentSettings,
   AssignStrategy,
-  Availability,
+  AgentAvailability,
   ApiScope,
   AssistantSettings,
   AssistantSettingsPatch,
@@ -16,6 +16,8 @@ import type {
   AssistantToolInput,
   AssistantUsage,
   Attachment,
+  AuditEntry,
+  AuthStatus,
   CannedResponse,
   Contact,
   CreatedApiKey,
@@ -24,6 +26,10 @@ import type {
   ConversationPriority,
   ConversationStatus,
   CustomFieldValue,
+  EmailChannelPatch,
+  EmailChannelSettings,
+  EmailOriginal,
+  EmailTestResult,
   InboxCounts,
   Invite,
   KnowledgeInput,
@@ -34,6 +40,11 @@ import type {
   TagWithUsage,
   Team,
   Teammate,
+  PushPreferences,
+  PushSettings,
+  PushSubscriptionInput,
+  SsoSettings,
+  SsoSettingsPatch,
   WebhookDelivery,
   WebhookEndpoint,
   WebhookEndpointWithSecret,
@@ -108,6 +119,12 @@ export interface AssistantPreview {
 
 export type AssistantToolPatch = Partial<AssistantToolInput>;
 
+/** What the owner saves in Settings → Teams & assignment (the whole ordered list at once). */
+export interface AssignmentInput {
+  rules: AssignmentRuleInput[];
+  fallback: { teamId: string | null; assign: AssignStrategy };
+}
+
 export const queryKeys = {
   bootstrap: ["bootstrap"] as const,
   counts: ["counts"] as const,
@@ -133,18 +150,38 @@ export const queryKeys = {
   conversationFields: ["conversation-fields"] as const,
   teams: ["teams"] as const,
   assignment: ["assignment"] as const,
+  pushSettings: ["push", "settings"] as const,
+  pushPublicKey: ["push", "public-key"] as const,
+  emailChannel: ["email-channel"] as const,
+  messageEmail: (messageId: string) => ["message-email", messageId] as const,
+  auditLog: (action: string, actor: string) => ["audit-log", action, actor] as const,
+  sso: ["sso"] as const,
 };
 
-/** What the owner saves in Settings → Teams & assignment (the whole ordered list at once). */
-export interface AssignmentInput {
-  rules: AssignmentRuleInput[];
-  fallback: { teamId: string | null; assign: AssignStrategy };
+/** Result of the SSO "Test connection" button. */
+export interface SsoTestResult {
+  ok: true;
+  issuer: string;
+  authorizationEndpoint: string;
+  tokenEndpoint: string;
+  jwksUri: string;
+}
+
+function auditSearch(filters: { action?: string; actor?: string; cursor?: string | null }): string {
+  const search = new URLSearchParams();
+  if (filters.action) search.set("action", filters.action);
+  if (filters.actor) search.set("actor", filters.actor);
+  if (filters.cursor) search.set("cursor", filters.cursor);
+  const text = search.toString();
+  return text ? `?${text}` : "";
 }
 
 const enc = encodeURIComponent;
 
 export const endpoints = {
-  authStatus: () => api<{ needsSetup: boolean }>("/api/agent/auth/status"),
+  authStatus: () => api<AuthStatus>("/api/agent/auth/status"),
+  /** A page to navigate to (not fetched): the provider's sign-in, then back to the dashboard. */
+  ssoStartUrl: "/api/agent/auth/sso/start",
   setup: (body: { setupToken: string; name: string; email: string; password: string }) =>
     api<{ agent: Agent }>("/api/agent/auth/setup", { body }),
   login: (body: { email: string; password: string }) => api<{ agent: Agent }>("/api/agent/auth/login", { body }),
@@ -275,5 +312,24 @@ export const endpoints = {
   saveAssignment: (body: AssignmentInput) => api<AssignmentSettings>("/api/agent/assignment", { method: "PUT", body: { ...body } }),
   setCapacity: (agentId: string, maxOpen: number | null) =>
     api<Teammate & { maxOpen: number | null }>(`/api/agent/assignment/teammates/${enc(agentId)}`, { method: "PATCH", body: { maxOpen } }),
-  setAvailability: (availability: Availability) => api<{ agent: Agent }>("/api/agent/me/availability", { method: "PUT", body: { availability } }),
+  setAvailability: (availability: AgentAvailability) => api<{ agent: Agent }>("/api/agent/me/availability", { method: "PUT", body: { availability } }),
+  pushPublicKey: () => api<{ publicKey: string }>("/api/agent/push/public-key"),
+  pushSettings: () => api<PushSettings>("/api/agent/push/preferences"),
+  savePushPreferences: (body: Partial<PushPreferences>) => api<PushSettings>("/api/agent/push/preferences", { method: "PUT", body: { ...body } }),
+  pushSubscribe: (body: PushSubscriptionInput) => api<PushSettings>("/api/agent/push/subscriptions", { body: { ...body } }),
+  pushUnsubscribe: (endpoint: string) => api<PushSettings>("/api/agent/push/subscriptions", { method: "DELETE", body: { endpoint } }),
+  pushTest: (endpoint: string) =>
+    api<{ outcome: "delivered" | "gone" | "failed"; status: number | null }>("/api/agent/push/test", { body: { endpoint } }),
+  emailChannel: () => api<EmailChannelSettings>("/api/agent/email"),
+  patchEmailChannel: (body: EmailChannelPatch) => api<EmailChannelSettings>("/api/agent/email", { method: "PATCH", body: { ...body } }),
+  testEmail: () => api<EmailTestResult>("/api/agent/email/test", { method: "POST" }),
+  messageEmail: (conversationId: string, messageId: string) =>
+    api<EmailOriginal>(`/api/agent/conversations/${enc(conversationId)}/messages/${enc(messageId)}/email`),
+  auditLog: (filters: { action?: string; actor?: string; cursor?: string | null }) =>
+    api<Page<AuditEntry>>(`/api/agent/audit-log${auditSearch(filters)}`),
+  auditLogExportUrl: (filters: { action?: string; actor?: string }) => `/api/agent/audit-log/export${auditSearch(filters)}`,
+
+  sso: () => api<SsoSettings>("/api/agent/sso"),
+  saveSso: (body: SsoSettingsPatch) => api<SsoSettings>("/api/agent/sso", { method: "PUT", body: { ...body } }),
+  testSso: (issuer: string) => api<SsoTestResult>("/api/agent/sso/test", { body: { issuer } }),
 };

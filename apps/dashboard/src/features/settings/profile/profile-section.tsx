@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SettingsCard, SettingsPage } from "../settings-page";
 import { PasswordForm } from "./password-form";
+import { NotificationsCard } from "./push/notifications-card";
 
 export function ProfileSection() {
   const { agent } = useBootstrap();
@@ -61,6 +62,7 @@ export function ProfileSection() {
       <SettingsCard title={copy.profile.password}>
         <PasswordForm />
       </SettingsCard>
+      <NotificationsCard />
     </SettingsPage>
   );
 }

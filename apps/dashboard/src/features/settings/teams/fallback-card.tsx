@@ -2,7 +2,7 @@ import { useState } from "react";
 import type { AssignmentSettings, AssignStrategy } from "yunidesk";
 import { copy } from "@/lib/copy";
 import { cn } from "@/lib/utils";
-import { useIsOwner } from "@/hooks/use-bootstrap";
+import { useCan } from "@/hooks/use-bootstrap";
 import { Button } from "@/components/ui/button";
 import { useTeams } from "@/features/teams/use-teams";
 import { SettingsCard } from "../settings-page";
@@ -31,7 +31,7 @@ function Choice({ active, disabled, label, onSelect }: { active: boolean; disabl
 
 /** Where a conversation goes when no rule matches: nowhere (today's behaviour) or a default team. */
 export function FallbackCard() {
-  const owner = useIsOwner();
+  const owner = useCan("teams.manage");
   const assignment = useAssignment();
   const teams = useTeams();
   const save = useSaveAssignment(copy.assignment.fallbackSaved);

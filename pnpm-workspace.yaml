@@ -6,3 +6,6 @@ onlyBuiltDependencies:
   - esbuild
   - workerd
   - sharp
+overrides:
+  # markdown-it's CLI-only dependency; keep it on a release at least two weeks old.
+  markdown-it>argparse: 3.0.2

@@ -1,4 +1,4 @@
-import type { AgentRole, AssignStrategy, AuthorType, Availability, Channel, ConversationFieldType, ConversationPriority, ConversationStatus, MessageKind, TagColor } from "yunidesk";
+import type { AgentRole, AssignStrategy, AuthorType, AgentAvailability, Channel, ConversationFieldType, ConversationPriority, ConversationStatus, MessageKind, TagColor } from "yunidesk";
 
 export interface AgentRow {
   id: string;
@@ -13,7 +13,7 @@ export interface AgentRow {
   created_at: number;
   last_seen_at: number | null;
   /** 'away': never assigned automatically. */
-  availability: Availability;
+  availability: AgentAvailability;
   /** Most open conversations they get automatically; null = no limit. */
   max_open: number | null;
 }
@@ -60,6 +60,10 @@ export interface ConversationRow {
   priority: ConversationPriority;
   /** JSON object of custom field values, keyed by field key. */
   custom_fields: string;
+  /** When the away message was last sent (business hours); once per closed period. */
+  away_notified_at: number | null;
+  /** Email conversations: the subject of the first email. */
+  subject: string | null;
   team_id: string | null;
 }
 
@@ -112,6 +116,15 @@ export interface MessageRow {
   created_at: number;
   /** 1 when the AI assistant wrote it. */
   ai: number;
+  // Email channel (all NULL for chat messages).
+  email_direction: "inbound" | "outbound" | null;
+  email_message_id: string | null;
+  email_in_reply_to: string | null;
+  email_status: "pending" | "sent" | "failed" | null;
+  email_error: string | null;
+  email_attempts: number;
+  email_next_attempt_at: number | null;
+  email_verified: number | null;
 }
 
 export interface AttachmentRow {
