@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { z } from "zod";
 import { limit, readBody, type AppEnv } from "../../app-env";
+import { audit } from "../../lib/audit";
 import { requirePermission } from "../../lib/permissions";
 import { badRequest } from "../../lib/errors";
 import { normalizeAddress } from "../../lib/email-channel/addresses";
@@ -39,7 +40,9 @@ emailRoutes.patch("/", async (c) => {
   if (input.fromName !== undefined) patch.fromName = input.fromName || null;
   if (input.fromAddress !== undefined) patch.fromAddress = input.fromAddress;
   if (input.provider !== undefined) patch.provider = input.provider;
-  return c.json(await toEmailChannelSettings(c.env, await saveEmailChannel(c.env, patch)));
+  const saved = await saveEmailChannel(c.env, patch);
+  if (Object.keys(patch).length) audit(c, "email_channel.updated", { type: "settings", id: "email" }, { keys: Object.keys(patch) });
+  return c.json(await toEmailChannelSettings(c.env, saved));
 });
 
 /** Sends a test reply to the owner's own address, through the configured provider. */

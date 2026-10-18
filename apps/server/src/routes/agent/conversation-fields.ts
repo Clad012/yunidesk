@@ -3,6 +3,7 @@ import { z } from "zod";
 import { CONVERSATION_FIELD_TYPES } from "yunidesk";
 import { readBody, type AppEnv } from "../../app-env";
 import type { ConversationFieldRow } from "../../db/rows";
+import { audit } from "../../lib/audit";
 import { requirePermission } from "../../lib/permissions";
 import {
   FIELD_KEY_PATTERN,
@@ -64,6 +65,7 @@ conversationFieldRoutes.post("/", async (c) => {
     if (String(error).includes("UNIQUE")) throw conflict("A field with this key already exists");
     throw error;
   }
+  audit(c, "conversation_field.created", { type: "conversation_field", id: row.id }, { key: row.key, type: row.type });
   return c.json(toConversationField(row), 201);
 });
 
@@ -94,6 +96,7 @@ conversationFieldRoutes.patch("/:id", async (c) => {
     options: input.options !== undefined ? JSON.stringify(input.options) : row.options,
   };
   await c.env.DB.prepare("UPDATE conversation_fields SET label = ?, options = ? WHERE id = ?").bind(next.label, next.options, row.id).run();
+  audit(c, "conversation_field.updated", { type: "conversation_field", id: row.id }, { keys: Object.keys(input) });
   return c.json(toConversationField(next));
 });
 
@@ -107,5 +110,6 @@ conversationFieldRoutes.delete("/:id", async (c) => {
     c.env.DB.prepare("DELETE FROM conversation_fields WHERE id = ?").bind(row.id),
     c.env.DB.prepare("UPDATE conversations SET custom_fields = json_remove(custom_fields, ?) WHERE json_type(custom_fields, ?) IS NOT NULL").bind(path, path),
   ]);
+  audit(c, "conversation_field.deleted", { type: "conversation_field", id: row.id }, { key: row.key });
   return c.json({ ok: true });
 });

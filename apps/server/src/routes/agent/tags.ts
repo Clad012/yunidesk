@@ -5,6 +5,7 @@ import { limit, readBody, type AppEnv } from "../../app-env";
 import { getConversation, labelsChanged } from "../../db/conversations";
 import type { TagRow } from "../../db/rows";
 import { normalizeTagName, toTag } from "../../db/tags";
+import { audit } from "../../lib/audit";
 import { requirePermission } from "../../lib/permissions";
 import { badRequest, conflict, notFound } from "../../lib/errors";
 import { newId } from "../../lib/ids";
@@ -89,13 +90,15 @@ tagRoutes.patch("/:id", async (c) => {
     throw error;
   }
   if (!row) throw notFound("Tag not found");
+  if (sets.length) audit(c, "tag.updated", { type: "tag", id: row.id }, { keys: Object.keys(input) });
   return c.json(toTag(row));
 });
 
 tagRoutes.delete("/:id", async (c) => {
   requirePermission(c, "settings.manage");
   // conversation_tags rows go with it (ON DELETE CASCADE).
-  await c.env.DB.prepare("DELETE FROM tags WHERE id = ?").bind(c.req.param("id")).run();
+  const deleted = await c.env.DB.prepare("DELETE FROM tags WHERE id = ?").bind(c.req.param("id")).run();
+  if (deleted.meta.changes) audit(c, "tag.deleted", { type: "tag", id: c.req.param("id") });
   return c.json({ ok: true });
 });
 

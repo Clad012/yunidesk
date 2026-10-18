@@ -745,6 +745,9 @@ export const copy = {
       assistant: "Assistant",
       contact: "Contacts",
       saved_reply: "Saved replies",
+      tag: "Tags",
+      conversation_field: "Custom fields",
+      email_channel: "Email channel",
     },
     actions: {
       "auth.setup": "Created the workspace",
@@ -785,6 +788,12 @@ export const copy = {
       "saved_reply.created": "Added a saved reply",
       "saved_reply.updated": "Edited a saved reply",
       "saved_reply.deleted": "Deleted a saved reply",
+      "tag.updated": "Renamed or recoloured a tag",
+      "tag.deleted": "Deleted a tag",
+      "conversation_field.created": "Added a custom field",
+      "conversation_field.updated": "Edited a custom field",
+      "conversation_field.deleted": "Deleted a custom field",
+      "email_channel.updated": "Changed the email channel",
     },
   },
   security: {

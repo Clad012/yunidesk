@@ -730,6 +730,12 @@ export const AUDIT_ACTIONS = [
   "saved_reply.created",
   "saved_reply.updated",
   "saved_reply.deleted",
+  "tag.updated",
+  "tag.deleted",
+  "conversation_field.created",
+  "conversation_field.updated",
+  "conversation_field.deleted",
+  "email_channel.updated",
 ] as const;
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
 export type AuditCategory = AuditAction extends `${infer C}.${string}` ? C : never;
