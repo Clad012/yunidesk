@@ -288,7 +288,7 @@ export function formatDayLabel(strings: SupportStrings, at: number, now = Date.n
 }
 
 export function formatClock(at: number, locale: Locale = "en"): string {
-  return new Date(at).toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit" });
+  return new Date(at).toLocaleTimeString(locale, { hour: "numeric", minute: "2-digit" });
 }
 
 function startOfDay(at: number): number {
