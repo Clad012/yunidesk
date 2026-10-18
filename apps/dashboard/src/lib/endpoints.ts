@@ -5,6 +5,10 @@ import type {
   AgentRole,
   AgentSendMessageInput,
   ApiKey,
+  AssignmentRuleInput,
+  AssignmentSettings,
+  AssignStrategy,
+  Availability,
   ApiScope,
   AssistantSettings,
   AssistantSettingsPatch,
@@ -26,9 +30,10 @@ import type {
   KnowledgeItem,
   Message,
   Page,
-  PublicAgent,
   TagColor,
   TagWithUsage,
+  Team,
+  Teammate,
   WebhookDelivery,
   WebhookEndpoint,
   WebhookEndpointWithSecret,
@@ -41,7 +46,8 @@ export const INBOX_VIEWS: readonly InboxView[] = ["mine", "unassigned", "open", 
 
 export interface Bootstrap {
   agent: Agent;
-  teammates: PublicAgent[];
+  /** Signed-in humans who can be assigned, with whether they are away. */
+  teammates: Teammate[];
   settings: AdminSettings;
 }
 
@@ -54,11 +60,15 @@ export interface ConversationPatch {
   priority?: ConversationPriority;
   /** Merged into the stored values; null clears one. */
   customFields?: Record<string, CustomFieldValue | null>;
+  /** Moves it to a team (null: out of its team). */
+  teamId?: string | null;
 }
 
 /** Narrow an inbox list (combinable with the view and the search). */
 export interface ListFilters {
   tag?: string;
+  /** A team id: only that team's conversations. */
+  team?: string;
   priority?: ConversationPriority;
   /** Urgent first, then high, normal, low; newest first within each. */
   sort?: "priority";
@@ -121,7 +131,15 @@ export const queryKeys = {
   assistantTools: ["assistant", "tools"] as const,
   tags: ["tags"] as const,
   conversationFields: ["conversation-fields"] as const,
+  teams: ["teams"] as const,
+  assignment: ["assignment"] as const,
 };
+
+/** What the owner saves in Settings → Teams & assignment (the whole ordered list at once). */
+export interface AssignmentInput {
+  rules: AssignmentRuleInput[];
+  fallback: { teamId: string | null; assign: AssignStrategy };
+}
 
 const enc = encodeURIComponent;
 
@@ -143,6 +161,7 @@ export const endpoints = {
     if (params.cursor) search.set("cursor", params.cursor);
     if (params.contactId) search.set("contactId", params.contactId);
     if (params.tag) search.set("tag", params.tag);
+    if (params.team) search.set("team", params.team);
     if (params.priority) search.set("priority", params.priority);
     if (params.sort) search.set("sort", params.sort);
     return api<Page<AgentConversation>>(`/api/agent/conversations?${search}`);
@@ -244,4 +263,17 @@ export const endpoints = {
     api<{ items: ConversationField[] }>("/api/agent/conversation-fields/reorder", { body: { ids } }),
 
   rollAssistantToolSecret: () => api<{ secret: string }>("/api/agent/assistant/tools/roll-secret", { method: "POST" }),
+
+  teams: () => api<{ items: Team[] }>("/api/agent/teams"),
+  createTeam: (name: string) => api<Team>("/api/agent/teams", { body: { name } }),
+  renameTeam: (id: string, name: string) => api<Team>(`/api/agent/teams/${enc(id)}`, { method: "PATCH", body: { name } }),
+  deleteTeam: (id: string) => api<{ ok: true }>(`/api/agent/teams/${enc(id)}`, { method: "DELETE" }),
+  addTeamMember: (id: string, agentId: string) => api<Team>(`/api/agent/teams/${enc(id)}/members/${enc(agentId)}`, { method: "PUT" }),
+  removeTeamMember: (id: string, agentId: string) =>
+    api<Team>(`/api/agent/teams/${enc(id)}/members/${enc(agentId)}`, { method: "DELETE" }),
+  assignment: () => api<AssignmentSettings>("/api/agent/assignment"),
+  saveAssignment: (body: AssignmentInput) => api<AssignmentSettings>("/api/agent/assignment", { method: "PUT", body: { ...body } }),
+  setCapacity: (agentId: string, maxOpen: number | null) =>
+    api<Teammate & { maxOpen: number | null }>(`/api/agent/assignment/teammates/${enc(agentId)}`, { method: "PATCH", body: { maxOpen } }),
+  setAvailability: (availability: Availability) => api<{ agent: Agent }>("/api/agent/me/availability", { method: "PUT", body: { availability } }),
 };

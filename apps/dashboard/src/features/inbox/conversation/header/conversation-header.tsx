@@ -14,6 +14,7 @@ import type { useConversationActions } from "../use-conversation-actions";
 import { AssignMenu } from "./assign-menu";
 import { PriorityMenu } from "./priority-menu";
 import { SnoozeMenu } from "./snooze-menu";
+import { TeamMenu } from "./team-menu";
 
 interface ConversationHeaderProps {
   conversation: AgentConversation;
@@ -50,6 +51,7 @@ export function ConversationHeader({ conversation, actions, panelOpen, onToggleP
         <span className="hidden shrink-0 lg:inline-flex"><StatusBadge conversation={conversation} /></span>
         {conversation.aiActive ? <AiAnsweringChip /> : null}
       </div>
+      <TeamMenu team={conversation.team} onChange={actions.setTeam} />
       <PriorityMenu priority={conversation.priority} onChange={actions.setPriority} />
       <AssignMenu conversation={conversation} onAssign={actions.assign} />
       <SnoozeMenu onSnooze={actions.snooze} />

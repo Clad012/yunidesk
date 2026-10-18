@@ -9,6 +9,7 @@ import { useInboxParams } from "../lib/use-inbox-params";
 import { SearchBox } from "./search-box";
 import { TagsNav } from "./tags-nav";
 import { TeamPresence } from "./team-presence";
+import { TeamsNav } from "./teams-nav";
 
 const VIEWS: { view: InboxView; icon: LucideIcon; count?: keyof InboxCounts }[] = [
   { view: "mine", icon: UserRoundIcon, count: "mine" },
@@ -45,6 +46,7 @@ export function ViewsPane() {
           );
         })}
       </nav>
+      <TeamsNav />
       <TagsNav />
       <TeamPresence />
     </aside>

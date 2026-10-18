@@ -22,9 +22,10 @@ export function matchesView(conversation: AgentConversation, view: InboxView, me
   }
 }
 
-/** The list's tag and priority filters (the view and the search are checked apart). */
+/** The list's tag, team and priority filters (the view and the search are checked apart). */
 export function matchesFilters(conversation: AgentConversation, filters: ListFilters): boolean {
   if (filters.tag && !conversation.tags.some((t) => t.id === filters.tag)) return false;
+  if (filters.team && conversation.team?.id !== filters.team) return false;
   if (filters.priority && conversation.priority !== filters.priority) return false;
   return true;
 }

@@ -58,6 +58,13 @@ describe("tag and priority filters", () => {
     expect(matchesFilters(tagged, { priority: "urgent", sort: "priority" })).toBe(true);
   });
 
+  it("keeps a team's list to that team", () => {
+    const billing = conversation("a", 1, { team: { id: "tem_billing", name: "Billing" } });
+    expect(matchesFilters(billing, { team: "tem_billing" })).toBe(true);
+    expect(matchesFilters(billing, { team: "tem_sales" })).toBe(false);
+    expect(matchesFilters(conversation("b", 1), { team: "tem_billing" })).toBe(false);
+  });
+
   it("places by priority first, then newest, when the list is sorted by priority", () => {
     const data: ConversationPages = {
       pages: [{ items: [conversation("u", 10, { priority: "urgent" }), conversation("n1", 50), conversation("n2", 20), conversation("l", 99, { priority: "low" })], nextCursor: null }],

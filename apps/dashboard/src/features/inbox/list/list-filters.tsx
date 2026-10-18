@@ -1,4 +1,4 @@
-import { ListFilterIcon, XIcon } from "lucide-react";
+import { ListFilterIcon, UsersRoundIcon, XIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import type { ConversationPriority } from "yunidesk";
 import { copy, fmt } from "@/lib/copy";
@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { TagDot } from "@/features/tags/tag-chip";
 import { useTags } from "@/features/tags/use-tags";
+import { useTeams } from "@/features/teams/use-teams";
 import { PRIORITY_ORDER, PriorityIcon } from "../lib/priority";
 import { useInboxParams } from "../lib/use-inbox-params";
 import { useSetFilters } from "../lib/use-set-filters";
@@ -75,14 +76,22 @@ export function ActiveFilters() {
   const { filters } = useInboxParams();
   const setFilters = useSetFilters();
   const tags = useTags();
-  if (!filters.tag && !filters.priority && !filters.sort) return null;
+  const teams = useTeams();
+  if (!filters.tag && !filters.team && !filters.priority && !filters.sort) return null;
   const tag = filters.tag ? tags.data?.items.find((t) => t.id === filters.tag) : undefined;
+  const team = filters.team ? teams.data?.items.find((t) => t.id === filters.team) : undefined;
   return (
     <div className="flex flex-wrap items-center gap-1.5 border-b px-3 py-2">
       {filters.tag ? (
         <FilterPill onClear={() => setFilters({ tag: null })}>
           {tag ? <TagDot color={tag.color} /> : null}
           <span className="max-w-40 truncate">{tag ? fmt(copy.tags.filterTitle, { name: tag.name }) : copy.tags.title}</span>
+        </FilterPill>
+      ) : null}
+      {filters.team ? (
+        <FilterPill onClear={() => setFilters({ team: null })}>
+          <UsersRoundIcon className="size-3.5" />
+          <span className="max-w-40 truncate">{team ? fmt(copy.teams.filterTitle, { name: team.name }) : copy.teams.team}</span>
         </FilterPill>
       ) : null}
       {filters.priority ? (
