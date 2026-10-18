@@ -43,6 +43,10 @@ pnpm run deploy:production    # same, with apps/server/wrangler.production.jsonc
 
 Add a custom domain (e.g. `support.example.com`) to the worker: uncomment `routes` in the config, or use the Cloudflare dashboard.
 
+### Help center on its own domain (optional)
+
+The help center works on the main domain at `/help` (e.g. `https://support.example.com/help`). To serve it from `help.example.com` too, add that domain to the same worker (another `routes` entry with `custom_domain: true`); the pages, canonical links and sitemap use the domain they are opened on. For the "Chat with us" button there, add `https://help.example.com` to the sites allowed to embed the messenger (Settings → Install or `ALLOWED_ORIGINS`).
+
 ## 4. First owner
 
 Open `https://support.example.com/setup`, enter the `SETUP_TOKEN`, your name, email and password. Then invite teammates from Settings → Team. Delete the `SETUP_TOKEN` secret afterwards.

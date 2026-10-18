@@ -80,7 +80,7 @@ Shapes are in `packages/protocol/src/types.ts`. Errors: `{ error: { code, messag
 | POST | `/team/invites` | owner; `{ email, role }` → `{ id, url }` (link shown once) |
 | DELETE | `/team/invites/:id` | owner |
 | PATCH | `/team/:id` | owner; `{ role?, disabled? }` |
-| GET/PUT | `/settings` | `AdminSettings` (PUT owner, partial) |
+| GET/PUT | `/settings` | `AdminSettings` (PUT owner, partial; `helpCenter: { enabled, title, description? }`) |
 | POST | `/settings/webhook-secret` | owner; `{ secret }` shown once |
 | GET/POST | `/canned-responses` | `{ shortcut, title, body }` |
 | PUT/DELETE | `/canned-responses/:id` | |
@@ -94,6 +94,25 @@ Websocket client frames: `{ type: "typing", conversationId, isTyping }` and `{ t
 ## Widget embedding
 
 `/widget.js` (loader, no dependencies) injects one iframe pointing at `/widget/`. The iframe's `frame-ancestors` CSP only lists `ALLOWED_ORIGINS` + the origins saved in Settings. Host ↔ iframe talk over `postMessage` with origin checks.
+
+## Help center
+
+Public, server-rendered web pages for the knowledge base (`apps/server/src/help-center`), on when **Settings → Assistant → Help center** is switched on (`helpCenter.enabled`; off answers 404).
+
+| Path | Page |
+|---|---|
+| `/help` | 302 to `/help/en` or `/help/fr` from `Accept-Language` |
+| `/help/:locale` | Title, description, search box, recently updated, categories with their articles |
+| `/help/:locale/:slug` | One article (Markdown), breadcrumb, more in its category |
+| `/help/:locale/search?q=` | Full-text search (`knowledge_fts`, query cut to 200 chars, only letters/digits kept, each word quoted) |
+| `/help/sitemap.xml`, `/robots.txt` | Every published page; robots allows `/help` only (served while the help center is on) |
+
+- **What shows:** knowledge items with `published = 1`, in the page's language or for every language (`locale` NULL). New FAQ entries start published, articles private. Each item has a `slug` (unique per language; an every-language item's slug must be free in all languages), an optional `category`, a `position` and a `translation_group` (items in one group are translations: hreflang links + the language switcher). Slugs of items created before 0.7.0 are filled on first use, in creation order.
+- **Markdown** goes through markdown-it with `html: false`: raw HTML shows as text, links and images keep only http(s)/mailto, links leaving the site get `rel="noopener nofollow ugc"`.
+- **Security headers:** strict CSP (`default-src 'none'`, scripts only from this origin, the one inline stylesheet allowed by its sha256), `frame-ancestors 'none'`, `nosniff`.
+- **Caching:** `public, max-age=60, stale-while-revalidate=300` with a weak ETag built from the settings' and the knowledge's `updated_at` (and item count), so a change is visible within a minute and unchanged pages answer 304.
+- **"Still need help? Chat with us"** shows only when the page's origin may embed the messenger (`ALLOWED_ORIGINS` + Settings → Install) and anonymous visitors may chat. The page then loads `/help/assets/chat.js` (boots the messenger and opens it on click) and `/widget.js`.
+- **Messenger:** `GET /api/v1/help` items carry `helpCenterUrl` when the help center is on and the entry is published ("Open in the help center" in the web messenger and the React Native SDK).
 
 ## Integrations (API keys, webhook endpoints)
 
