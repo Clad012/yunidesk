@@ -2,7 +2,8 @@ import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import { stepCountIs, streamText, type ModelMessage } from "ai";
 import type { AssistantToolCall } from "yunidesk";
 import type { Env } from "../../env";
-import { getConversation, handOffToTeam, postAssistantMessage } from "../../db/conversations";
+import { getConversation, postAssistantMessage } from "../../db/conversations";
+import { handOffAndRoute } from "../../db/routing";
 import type { AgentRow, ContactRow, MessageRow } from "../../db/rows";
 import { notifyContact } from "../realtime";
 import { getSettings } from "../settings";
@@ -140,6 +141,7 @@ async function repliesToContactToday(env: Env, contactId: string): Promise<numbe
  * After a customer writes: the assistant answers when it is on, the conversation is still its own
  * and every limit allows it. Anything that stops it (budget, rate, an error) hands the
  * conversation to the team instead, so the customer is never left waiting on a silent bot.
+ * Resolves to true when the assistant took (or already had) the conversation, false when it is the team's.
  */
 export async function runAssistantTurn(
   env: Env,
@@ -148,15 +150,15 @@ export async function runAssistantTurn(
   conversationId: string,
   /** The customer's IP, so anonymous visitors can't dodge the limit with fresh sessions. */
   ip: string | null = null,
-): Promise<void> {
+): Promise<boolean> {
   const stored = await getAssistant(env);
-  if (!isAssistantReady(stored)) return;
+  if (!isAssistantReady(stored)) return false;
   let conversation = await getConversation(env, conversationId);
-  if (conversation.ai_state !== null && conversation.ai_state !== "active") return;
-  if (conversation.last_message_author !== "contact") return;
+  if (conversation.ai_state !== null && conversation.ai_state !== "active") return false;
+  if (conversation.last_message_author !== "contact") return conversation.ai_state === "active";
   const contact = await env.DB.prepare("SELECT * FROM contacts WHERE id = ?").bind(conversation.contact_id).first<ContactRow>();
-  if (!contact) return;
-  if (!contact.is_identified && !stored.allowAnonymous) return;
+  if (!contact) return false;
+  if (!contact.is_identified && !stored.allowAnonymous) return false;
 
   const now = Date.now();
   const claimed = await env.DB.prepare(
@@ -166,10 +168,10 @@ export async function runAssistantTurn(
     .bind(now + LOCK_MS, conversationId, now)
     .run();
   // Another reply is being written; it reads the whole conversation, this message included.
-  if (!claimed.meta.changes) return;
+  if (!claimed.meta.changes) return true;
   conversation = await getConversation(env, conversationId);
 
-  const handOff = () => handOffToTeam(env, ctx, origin, conversation).then(() => undefined);
+  const handOff = () => handOffAndRoute(env, ctx, origin, conversation).then(() => undefined);
   const { success } = await env.ASSISTANT_LIMITER.limit({ key: `contact:${contact.id}` });
   const ipAllowed =
     contact.is_identified === 1 || !ip ? true : (await env.ASSISTANT_LIMITER.limit({ key: `ip:${ip}` })).success;
@@ -180,10 +182,14 @@ export async function runAssistantTurn(
     (await spentToday(env)) >= stored.dailyBudgetUsd
   ) {
     await handOff();
-    return;
+    return true;
   }
-  const apiKey = await openOpenRouterKey(env, stored);
-  if (!apiKey) return;
+  const apiKey = await openOpenRouterKey(env, stored).catch(() => null);
+  if (!apiKey) {
+    // The sealed key can't be opened (SESSION_SECRET changed): don't leave the customer waiting.
+    await handOff();
+    return true;
+  }
 
   const { results } = await env.DB.prepare(
     "SELECT * FROM messages WHERE conversation_id = ? AND kind = 'text' ORDER BY created_at DESC, id DESC LIMIT ?",
@@ -231,7 +237,7 @@ export async function runAssistantTurn(
     if (current.ai_state !== "active" || !reply.text) {
       await status("failed");
       if (current.ai_state === "active") await handOff();
-      return;
+      return true;
     }
     const agent = await assistantAgent(env, stored);
     const posted = await postAssistantMessage(env, ctx, origin, current, agent, reply.text);
@@ -251,6 +257,7 @@ export async function runAssistantTurn(
   if (after.ai_state === "active" && after.last_message_author === "contact" && (after.last_contact_message_at ?? 0) > now) {
     ctx.waitUntil(runAssistantTurn(env, ctx, origin, conversationId, ip));
   }
+  return true;
 }
 
 

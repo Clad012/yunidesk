@@ -104,17 +104,19 @@ describe("what a contact receives", () => {
     ai_lock_until: null,
     priority: "urgent",
     custom_fields: JSON.stringify({ internal_score: "churn-risk-7" }),
+    team_id: "tem_vip_escalations",
   };
 
-  it("never carries priority, tags, custom fields, the assignee or the snooze", () => {
+  it("never carries priority, tags, custom fields, the assignee, the team or the snooze", () => {
     const sent = toContactConversation(row, 0, []);
-    for (const key of ["priority", "tags", "customFields", "custom_fields", "assignee", "assigneeId", "snoozedUntil"]) {
+    for (const key of ["priority", "tags", "customFields", "custom_fields", "assignee", "assigneeId", "snoozedUntil", "team", "teamId", "team_id"]) {
       expect(sent).not.toHaveProperty(key);
     }
     const json = JSON.stringify(sent);
     expect(json).not.toContain("urgent");
     expect(json).not.toContain("churn-risk-7");
     expect(json).not.toContain("agt_1");
+    expect(json).not.toContain("tem_vip_escalations");
     expect(sent.status).toBe("open");
   });
 });

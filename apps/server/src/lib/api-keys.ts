@@ -128,6 +128,9 @@ const KEY_ROUTES: { method: string; path: RegExp; scope: ApiScope | null }[] = [
   { method: "POST", path: new RegExp(`^/conversations/${ID}/tags$`), scope: "conversations:write" },
   { method: "DELETE", path: new RegExp(`^/conversations/${ID}/tags/${ID}$`), scope: "conversations:write" },
   { method: "GET", path: /^\/conversation-fields$/, scope: "conversations:read" },
+  // Teams: readable with conversations:read; moving a conversation is PATCH /conversations/:id { teamId }.
+  // Managing teams, the assignment rules, capacities and availability are session only.
+  { method: "GET", path: /^\/teams$/, scope: "conversations:read" },
   { method: "GET", path: /^\/contacts$/, scope: "contacts:read" },
   { method: "GET", path: new RegExp(`^/contacts/${ID}$`), scope: "contacts:read" },
   { method: "GET", path: /^\/assistant$/, scope: "assistant:write" },

@@ -8,11 +8,16 @@ export function toTag(row: Pick<TagRow, "id" | "name" | "color">): Tag {
 
 /** Trims, folds inner whitespace and drops control characters; null when nothing usable is left. */
 export function normalizeTagName(input: string): string | null {
+  return cleanName(input, MAX_TAG_NAME_LENGTH);
+}
+
+/** Trims, folds inner whitespace and drops control and direction characters; null when empty or too long. */
+export function cleanName(input: string, maxLength: number): string | null {
   const name = input
     .replace(/[\u0000-\u001f\u007f-\u009f​-‏‪-‮⁦-⁩]/g, "")
     .replace(/\s+/g, " ")
     .trim();
-  return name.length > 0 && name.length <= MAX_TAG_NAME_LENGTH ? name : null;
+  return name.length > 0 && name.length <= maxLength ? name : null;
 }
 
 export function isTagColor(value: string): value is TagColor {

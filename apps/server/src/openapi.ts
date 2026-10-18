@@ -42,6 +42,7 @@ const conversationPatch = {
       description: "Merged into the stored values; null clears one. Keys must be defined fields (GET /conversation-fields).",
       additionalProperties: { oneOf: [{ type: "string" }, { type: "number" }, { type: "boolean" }, { type: "null" }] },
     },
+    teamId: nullable({ ...id("tem"), description: "Move it to a team from GET /teams (null: out of its team). Adds an internal timeline event; the assignee stays" }),
   },
 };
 
@@ -56,6 +57,8 @@ const webhookLabels = {
   priority,
   tags: { type: "array", items: { type: "string" }, description: "Tag names, alphabetical" },
   customFields,
+  teamId: nullable(id("tem")),
+  team: nullable({ type: "string", description: "The team's name" }),
 };
 const tagInput = {
   type: "object",
@@ -193,6 +196,38 @@ export const openApiDocument = {
           priority,
           tags: { type: "array", items: ref("Tag") },
           customFields,
+          team: nullable({ type: "object", properties: { id: id("tem"), name: { type: "string" } } }),
+        },
+      },
+      Teammate: {
+        allOf: [
+          ref("PublicAgent"),
+          { type: "object", properties: { availability: { enum: ["available", "away"], description: "Away teammates are never assigned automatically" } } },
+        ],
+      },
+      Team: {
+        type: "object",
+        properties: {
+          id: id("tem"),
+          name: { type: "string" },
+          members: {
+            type: "array",
+            items: {
+              allOf: [
+                ref("Teammate"),
+                {
+                  type: "object",
+                  properties: {
+                    openCount: { type: "integer", description: "Open conversations assigned to them, all teams" },
+                    maxOpen: nullable({ type: "integer", description: "Most open conversations they get automatically" }),
+                  },
+                },
+              ],
+            },
+          },
+          openCount: { type: "integer" },
+          unassignedCount: { type: "integer" },
+          createdAt: ms,
         },
       },
       Tag: {
@@ -328,8 +363,13 @@ export const openApiDocument = {
       }),
     },
     "/teammates": {
-      get: op("listTeammates", "conversations:read", "People who can be assigned conversations", {
-        responses: { "200": ok({ type: "object", properties: { items: { type: "array", items: ref("PublicAgent") } } }), ...errors },
+      get: op("listTeammates", "conversations:read", "People who can be assigned conversations, available or away", {
+        responses: { "200": ok({ type: "object", properties: { items: { type: "array", items: ref("Teammate") } } }), ...errors },
+      }),
+    },
+    "/teams": {
+      get: op("listTeams", "conversations:read", "Teams, alphabetical, with members, their load and open counts (managing teams is an owner setting)", {
+        responses: { "200": ok({ type: "object", properties: { items: { type: "array", items: ref("Team") } } }), ...errors },
       }),
     },
     "/conversations": {
@@ -339,6 +379,7 @@ export const openApiDocument = {
           { name: "q", in: "query", schema: { type: "string", maxLength: 200 }, description: "Contact name/email or message text" },
           { name: "contactId", in: "query", schema: id("ctc") },
           { name: "tag", in: "query", schema: id("tag"), description: "Only conversations with this tag" },
+          { name: "team", in: "query", schema: id("tem"), description: "Only conversations in this team" },
           { name: "priority", in: "query", schema: priority },
           { name: "sort", in: "query", schema: { enum: ["priority"] }, description: "Urgent, then high, normal, low; newest first within each" },
           { name: "cursor", in: "query", schema: { type: "string" } },
@@ -356,7 +397,7 @@ export const openApiDocument = {
         parameters: [pathId("conversationId", "cnv")],
         responses: { "200": ok(ref("Conversation")), ...errors },
       }),
-      patch: op("updateConversation", "conversations:write", "Assign, snooze, resolve, reopen, set the priority or custom field values", {
+      patch: op("updateConversation", "conversations:write", "Assign, move to a team, snooze, resolve, reopen, set the priority or custom field values", {
         parameters: [pathId("conversationId", "cnv")],
         requestBody: { content: json(conversationPatch) },
         responses: { "200": ok(ref("Conversation")), ...errors },

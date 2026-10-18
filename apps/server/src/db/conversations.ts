@@ -62,10 +62,19 @@ async function contactSummary(env: Env, contactId: string): Promise<WebhookConta
   return { id: contactId, externalId: row?.external_id ?? null, email: row?.email ?? null, name: row?.name ?? null };
 }
 
-/** Priority, tag names and custom fields, as conversation webhooks carry them (team only). */
+/** Priority, tag names, custom fields and team, as conversation webhooks carry them (team only). */
 export async function conversationLabels(env: Env, row: ConversationRow): Promise<WebhookConversationLabels> {
   const tags = (await loadConversationTags(env, [row.id])).get(row.id) ?? [];
-  return { priority: row.priority ?? "normal", tags: tags.map((t) => t.name), customFields: parseCustomFields(row.custom_fields) };
+  const team = row.team_id
+    ? await env.DB.prepare("SELECT name FROM teams WHERE id = ?").bind(row.team_id).first<{ name: string }>()
+    : null;
+  return {
+    priority: row.priority ?? "normal",
+    tags: tags.map((t) => t.name),
+    customFields: parseCustomFields(row.custom_fields),
+    teamId: team ? row.team_id : null,
+    team: team?.name ?? null,
+  };
 }
 
 async function sendConversationUpdated(env: Env, row: ConversationRow, actor: WebhookActor): Promise<void> {
@@ -162,6 +171,9 @@ export async function createConversation(
         priority: conversation.priority ?? "normal",
         tags: [],
         customFields: parseCustomFields(conversation.custom_fields),
+        // Rules route it right after this event; conversation.updated carries the team.
+        teamId: null,
+        team: null,
       }),
     ),
   );
@@ -235,6 +247,7 @@ async function insertMessage(
     );
   }
 
+  let assigneeBeforeIndex = -1;
   if (kind === "text") {
     const preview = body.length > PREVIEW_LENGTH ? `${body.slice(0, PREVIEW_LENGTH - 1)}…` : body;
     const previewSet = `last_message_at = ?, last_message_body = ?, last_message_author = ?,
@@ -249,6 +262,9 @@ async function insertMessage(
         ).bind(...previewValues, now, now, conversation.id),
       );
     } else {
+      // Read inside the same transaction, to know whether this reply is what assigned it.
+      assigneeBeforeIndex = statements.length;
+      statements.push(env.DB.prepare("SELECT assignee_id FROM conversations WHERE id = ?").bind(conversation.id));
       statements.push(
         env.DB.prepare(
           `UPDATE conversations SET ${previewSet}, last_agent_message_at = ?, agent_last_read_at = ?,
@@ -278,8 +294,9 @@ async function insertMessage(
     statements.push(env.DB.prepare("UPDATE conversations SET updated_at = ? WHERE id = ?").bind(now, conversation.id));
   }
 
+  let batchResults: D1Result[];
   try {
-    await env.DB.batch(statements);
+    batchResults = await env.DB.batch(statements);
   } catch (error) {
     // Two retries of the same send raced; return the one that won.
     if (draft.clientId && String(error).includes("UNIQUE")) {
@@ -294,7 +311,16 @@ async function insertMessage(
     throw error;
   }
 
-  const updated = await getConversation(env, conversation.id);
+  let updated = await getConversation(env, conversation.id);
+  const assigneeBefore =
+    assigneeBeforeIndex === -1 ? undefined : (batchResults[assigneeBeforeIndex]?.results[0] as { assignee_id: string | null } | undefined);
+  if (assigneeBefore && assigneeBefore.assignee_id === null && updated.assignee_id !== null && agent) {
+    updated = await assignmentChanged(env, ctx, origin, updated, {
+      to: updated.assignee_id,
+      assigneeName: agent.name,
+      source: { type: "first_reply", agent },
+    });
+  }
   const row: MessageRow = {
     id,
     conversation_id: conversation.id,
@@ -365,6 +391,8 @@ export interface ConversationPatch {
   priority?: ConversationPriority;
   /** `{ key: value | null }`, merged into the stored values (null clears). Checked against the field definitions. */
   customFields?: Record<string, unknown>;
+  /** Moves it to a team (null: out of its team). Doesn't change the assignee. */
+  teamId?: string | null;
 }
 
 export async function updateConversation(
@@ -379,6 +407,7 @@ export async function updateConversation(
   const events: SystemEvent[] = [];
   const sets: string[] = [];
   const values: unknown[] = [];
+  let assignment: AssignmentChange | null = null;
 
   if (patch.assigneeId !== undefined && patch.assigneeId !== conversation.assignee_id) {
     let assigneeName: string | null = null;
@@ -391,7 +420,19 @@ export async function updateConversation(
     }
     sets.push("assignee_id = ?");
     values.push(patch.assigneeId);
-    events.push({ type: "assigned", agentName: agent.name, assigneeName });
+    assignment = { to: patch.assigneeId, assigneeName, source: { type: "teammate", agent } };
+  }
+
+  if (patch.teamId !== undefined && patch.teamId !== conversation.team_id) {
+    let teamName: string | null = null;
+    if (patch.teamId) {
+      const team = await env.DB.prepare("SELECT name FROM teams WHERE id = ?").bind(patch.teamId).first<{ name: string }>();
+      if (!team) throw badRequest("Unknown team");
+      teamName = team.name;
+    }
+    sets.push("team_id = ?");
+    values.push(patch.teamId);
+    events.push({ type: "team", agentName: agent.name, teamName });
   }
 
   if (patch.status && patch.status !== conversation.status) {
@@ -437,6 +478,7 @@ export async function updateConversation(
     .run();
 
   let current = await getConversation(env, conversation.id);
+  if (assignment) current = await assignmentChanged(env, ctx, origin, current, assignment);
   for (const event of events) {
     ({ conversation: current } = await insertMessage(
       env,
@@ -450,12 +492,89 @@ export async function updateConversation(
       event,
     ));
   }
-  if (events.length === 0) {
+  if (events.length === 0 && !assignment) {
     // Only custom fields changed: no timeline event carried the new state to the dashboards.
     const [agentConversation] = await toAgentConversations(env, [current]);
     if (agentConversation) ctx.waitUntil(notifyAgents(env, { type: "conversation.updated", conversation: agentConversation }));
   }
   ctx.waitUntil(sendConversationUpdated(env, current, actorOf({ type: "agent", agent })));
+  return current;
+}
+
+export type AssignmentSource =
+  /** A teammate or an API key's bot (PATCH assigneeId). */
+  | { type: "teammate"; agent: AgentRow }
+  /** The automatic assignment rules. */
+  | { type: "rules" }
+  /** A teammate's first reply took an unassigned conversation. */
+  | { type: "first_reply"; agent: AgentRow };
+
+export interface AssignmentChange {
+  to: string | null;
+  assigneeName: string | null;
+  source: AssignmentSource;
+}
+
+/**
+ * Every change of assignee goes through here exactly once, after the row is written, whatever
+ * made it: a teammate or a key (PATCH), the assignment rules, or a first reply. Writes the timeline
+ * event (not for a first reply: the reply itself shows who took it). Hook assignment notifications here.
+ */
+async function assignmentChanged(
+  env: Env,
+  ctx: ExecutionContext,
+  origin: string,
+  conversation: ConversationRow,
+  change: AssignmentChange,
+): Promise<ConversationRow> {
+  if (change.source.type === "first_reply") return conversation;
+  const { conversation: current } = await insertMessage(
+    env,
+    ctx,
+    origin,
+    conversation,
+    { type: "system", agent: change.source.type === "teammate" ? change.source.agent : null },
+    "event",
+    { body: "", attachmentIds: [], clientId: null },
+    [],
+    { type: "assigned", agentName: change.source.type === "teammate" ? change.source.agent.name : null, assigneeName: change.assigneeName },
+  );
+  return current;
+}
+
+/**
+ * After the assignment rules routed a conversation (db/routing.ts wrote team and assignee):
+ * the team event, the assignment, and conversation.updated with a system actor.
+ */
+export async function announceRouting(
+  env: Env,
+  ctx: ExecutionContext,
+  origin: string,
+  conversationId: string,
+  team: { name: string },
+  assigneeId: string | null,
+): Promise<ConversationRow> {
+  let current = await getConversation(env, conversationId);
+  ({ conversation: current } = await insertMessage(
+    env,
+    ctx,
+    origin,
+    current,
+    { type: "system", agent: null },
+    "event",
+    { body: "", attachmentIds: [], clientId: null },
+    [],
+    { type: "team", agentName: null, teamName: team.name },
+  ));
+  if (assigneeId) {
+    const assignee = await env.DB.prepare("SELECT name FROM agents WHERE id = ?").bind(assigneeId).first<{ name: string }>();
+    current = await assignmentChanged(env, ctx, origin, current, {
+      to: assigneeId,
+      assigneeName: assignee?.name ?? null,
+      source: { type: "rules" },
+    });
+  }
+  ctx.waitUntil(sendConversationUpdated(env, current, { type: "system", id: null }));
   return current;
 }
 
@@ -561,7 +680,7 @@ export async function postAssistantMessage(
   );
 }
 
-/** "Talk to a human": the assistant stops, the team sees a marker and the conversation stays unassigned. */
+/** "Talk to a human": the assistant stops and the team sees a marker. Use handOffAndRoute (db/routing.ts) so the rules run. */
 export async function handOffToTeam(
   env: Env,
   ctx: ExecutionContext,

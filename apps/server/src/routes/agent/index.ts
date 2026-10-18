@@ -9,6 +9,9 @@ import { forbidden, unauthorized } from "../../lib/errors";
 import { inboxHub } from "../../lib/realtime";
 import { getSettings, toAdminSettings } from "../../lib/settings";
 import { apiKeyRoutes } from "./api-keys";
+import { assignmentRoutes, availabilityRoutes } from "./assignment";
+import { teamsRoutes } from "./teams";
+import { toTeammate } from "../../db/teams";
 import { assistantRoutes } from "./assistant";
 import { contactAdminRoutes } from "./contacts";
 import { conversationFieldRoutes } from "./conversation-fields";
@@ -56,12 +59,12 @@ agentRoutes.get("/events", (c) => {
   return c.json({ items: WEBHOOK_EVENT_CATALOG });
 });
 
-/** People who can be assigned conversations. */
+/** People who can be assigned conversations, with whether they are available or away. */
 agentRoutes.get("/teammates", async (c) => {
   const { results } = await c.env.DB.prepare(
     "SELECT * FROM agents WHERE disabled_at IS NULL AND kind = 'human' ORDER BY name",
   ).all<AgentRow>();
-  return c.json({ items: results.map(toPublicAgent) });
+  return c.json({ items: results.map(toTeammate) });
 });
 
 agentRoutes.get("/bootstrap", async (c) => {
@@ -69,7 +72,7 @@ agentRoutes.get("/bootstrap", async (c) => {
   const { results } = await c.env.DB.prepare("SELECT * FROM agents WHERE disabled_at IS NULL AND kind = 'human' ORDER BY name").all<AgentRow>();
   return c.json({
     agent: toAgent(agent),
-    teammates: results.map(toPublicAgent),
+    teammates: results.map(toTeammate),
     settings: toAdminSettings(await getSettings(c.env)),
   });
 });
@@ -94,4 +97,7 @@ agentRoutes.route("/contacts", contactAdminRoutes);
 agentRoutes.route("/api-keys", apiKeyRoutes);
 agentRoutes.route("/assistant", assistantRoutes);
 agentRoutes.route("/webhook-endpoints", webhookEndpointRoutes);
+agentRoutes.route("/teams", teamsRoutes);
+agentRoutes.route("/assignment", assignmentRoutes);
+agentRoutes.route("/me/availability", availabilityRoutes);
 agentRoutes.route("/", teamRoutes);

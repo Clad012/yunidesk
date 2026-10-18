@@ -1,4 +1,4 @@
-import type { AgentRole, AuthorType, Channel, ConversationFieldType, ConversationPriority, ConversationStatus, MessageKind, TagColor } from "yunidesk";
+import type { AgentRole, AssignStrategy, AuthorType, Availability, Channel, ConversationFieldType, ConversationPriority, ConversationStatus, MessageKind, TagColor } from "yunidesk";
 
 export interface AgentRow {
   id: string;
@@ -12,6 +12,10 @@ export interface AgentRow {
   disabled_at: number | null;
   created_at: number;
   last_seen_at: number | null;
+  /** 'away': never assigned automatically. */
+  availability: Availability;
+  /** Most open conversations they get automatically; null = no limit. */
+  max_open: number | null;
 }
 
 export interface ContactRow {
@@ -56,6 +60,26 @@ export interface ConversationRow {
   priority: ConversationPriority;
   /** JSON object of custom field values, keyed by field key. */
   custom_fields: string;
+  team_id: string | null;
+}
+
+export interface TeamRow {
+  id: string;
+  name: string;
+  created_at: number;
+  last_assigned_agent_id: string | null;
+  assign_version: string;
+}
+
+export interface AssignmentRuleRow {
+  id: string;
+  position: number;
+  name: string;
+  /** JSON AssignmentConditions. */
+  conditions: string;
+  team_id: string;
+  assign: AssignStrategy;
+  created_at: number;
 }
 
 export interface TagRow {

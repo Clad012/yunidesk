@@ -28,6 +28,8 @@ export interface Agent extends PublicAgent {
   role: AgentRole;
   createdAt: number;
   lastSeenAt: number | null;
+  /** Away teammates are never assigned conversations automatically. */
+  availability: Availability;
 }
 
 export interface Attachment {
@@ -50,7 +52,9 @@ export type SystemEvent =
   /** The customer asked for a person: the AI assistant stops answering this conversation. */
   | { type: "handed_off"; agentName: null }
   /** Team only: never shown to the contact. */
-  | { type: "priority"; agentName: string | null; priority: ConversationPriority };
+  | { type: "priority"; agentName: string | null; priority: ConversationPriority }
+  /** Team only: moved to a team (`teamName` null: taken out of its team). `agentName` null: the assignment rules. */
+  | { type: "team"; agentName: string | null; teamName: string | null };
 
 export interface Message {
   id: string;
@@ -147,6 +151,8 @@ export interface AgentConversation {
   tags: Tag[];
   priority: ConversationPriority;
   customFields: CustomFields;
+  /** Team only: the team it was routed or moved to. */
+  team: TeamRef | null;
 }
 
 export interface WidgetSettings {
@@ -248,6 +254,81 @@ export interface ConversationField {
 export type CustomFieldValue = string | number | boolean;
 export type CustomFields = Record<string, CustomFieldValue>;
 
+// ---- Teams and automatic assignment (team only; contacts never see them) ----
+
+/** Away: still signed in and replying, but never picked by round robin or least busy. */
+export const AVAILABILITIES = ["available", "away"] as const;
+export type Availability = (typeof AVAILABILITIES)[number];
+
+export const MAX_TEAMS = 50;
+export const MAX_TEAM_NAME_LENGTH = 40;
+export const MAX_ASSIGNMENT_RULES = 50;
+
+export interface TeamRef {
+  id: string;
+  name: string;
+}
+
+/** A teammate as the team sees them (never sent to contacts). */
+export interface Teammate extends PublicAgent {
+  availability: Availability;
+}
+
+export interface TeamMember extends Teammate {
+  /** Open conversations assigned to them, in every team. */
+  openCount: number;
+  /** Most open conversations they get automatically; null = no limit. */
+  maxOpen: number | null;
+}
+
+export interface Team extends TeamRef {
+  members: TeamMember[];
+  /** Open conversations in the team. */
+  openCount: number;
+  /** Open conversations in the team nobody holds yet. */
+  unassignedCount: number;
+  createdAt: number;
+}
+
+/**
+ * - round_robin: the next available teammate in turn
+ * - least_busy: the available teammate with the fewest open conversations (ties: next in turn)
+ * - none: the team only; teammates pick it up
+ */
+export const ASSIGN_STRATEGIES = ["round_robin", "least_busy", "none"] as const;
+export type AssignStrategy = (typeof ASSIGN_STRATEGIES)[number];
+
+/** `app` is the iOS and Android SDK. */
+export const RULE_CHANNELS = ["any", "web", "app", "email"] as const;
+export type RuleChannel = (typeof RULE_CHANNELS)[number];
+
+/** Every condition must hold. Leave them all open for a rule that catches everything. */
+export interface AssignmentConditions {
+  channel: RuleChannel;
+  contact: "any" | "identified" | "anonymous";
+  /** The conversation carries this tag. */
+  tagId: string | null;
+  /** contacts.attributes[key] equals value (compared as text). */
+  attribute: { key: string; value: string } | null;
+}
+
+export interface AssignmentRule {
+  id: string;
+  name: string;
+  conditions: AssignmentConditions;
+  teamId: string;
+  assign: AssignStrategy;
+}
+
+export interface AssignmentSettings {
+  /** In order: the first rule that matches wins. */
+  rules: AssignmentRule[];
+  /** When no rule matches: leave the conversation unassigned (teamId null) or send it to a team. */
+  fallback: { teamId: string | null; assign: AssignStrategy };
+}
+
+export type AssignmentRuleInput = Omit<AssignmentRule, "id"> & { id?: string };
+
 // ---- Realtime ----
 
 export type ContactServerEvent =
@@ -271,7 +352,9 @@ export type AgentServerEvent =
   | { type: "typing"; conversationId: string; by: "agent"; agent: PublicAgent; isTyping: boolean; internal?: boolean }
   | { type: "presence"; onlineAgentIds: string[] }
   | { type: "contact.presence"; contactId: string; online: boolean }
-  | { type: "contact.deleted"; contactId: string };
+  | { type: "contact.deleted"; contactId: string }
+  /** A teammate switched between available and away. */
+  | { type: "availability"; agentId: string; availability: Availability };
 
 export type ClientEvent =
   /** `internal` (team only): a teammate writing a note; never shown to the contact. */

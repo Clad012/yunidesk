@@ -17,6 +17,7 @@ import type { Env } from "../env";
 import { parseCustomFields } from "../lib/custom-fields";
 import { signFilePath } from "../lib/tokens";
 import { loadConversationTags } from "./tags";
+import { loadTeamRefs } from "./teams";
 import { selectIn, type AgentRow, type AttachmentRow, type ContactRow, type ConversationRow, type MessageRow } from "./rows";
 
 export function toPublicAgent(row: Pick<AgentRow, "id" | "name" | "avatar_url"> & { kind?: AgentRow["kind"] }): PublicAgent {
@@ -30,6 +31,7 @@ export function toAgent(row: AgentRow): Agent {
     role: row.role,
     createdAt: row.created_at,
     lastSeenAt: row.last_seen_at,
+    availability: row.availability === "away" ? "away" : "available",
   };
 }
 
@@ -148,6 +150,7 @@ export async function toAgentConversations(
   );
   const contactMap = new Map(contacts.map((c) => [c.id, c]));
   const tags = await loadConversationTags(env, rows.map((r) => r.id));
+  const teams = rows.some((r) => r.team_id) ? await loadTeamRefs(env) : new Map<string, never>();
   const out: AgentConversation[] = [];
   for (const row of rows) {
     const contact = contactMap.get(row.contact_id);
@@ -172,6 +175,7 @@ export async function toAgentConversations(
       tags: tags.get(row.id) ?? [],
       priority: row.priority ?? "normal",
       customFields: parseCustomFields(row.custom_fields),
+      team: (row.team_id ? teams.get(row.team_id) : undefined) ?? null,
     });
   }
   return out;
@@ -223,7 +227,7 @@ export async function toContactConversations(env: Env, rows: ConversationRow[]):
 
 /**
  * The contact's view of a conversation. Built field by field on purpose: team-only data on the
- * row (assignee, tags, priority, custom fields, snooze) must never reach the widget or app SDK.
+ * row (assignee, team, tags, priority, custom fields, snooze) must never reach the widget or app SDK.
  */
 export function toContactConversation(row: ConversationRow, unreadCount: number, participants: PublicAgent[]): ContactConversation {
   return {
