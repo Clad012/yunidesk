@@ -104,6 +104,8 @@ const en = {
   stillNeedHelp: "Still need help?",
   stillNeedHelpHint: "Send us a message and we'll sort it out.",
   askAQuestion: "Ask a question",
+  // Help center
+  openInHelpCenter: "Open in the help center",
 };
 
 export type SupportStrings = typeof en;
@@ -211,6 +213,8 @@ const fr: SupportStrings = {
   stillNeedHelp: "Besoin d'aide supplémentaire ?",
   stillNeedHelpHint: "Envoyez-nous un message, on s'en occupe.",
   askAQuestion: "Poser une question",
+  // Centre d'aide
+  openInHelpCenter: "Ouvrir dans le centre d'aide",
 };
 
 const dictionaries: Record<Locale, SupportStrings> = { en, fr };
