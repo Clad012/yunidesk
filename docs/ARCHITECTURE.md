@@ -39,7 +39,7 @@ Shapes are in `packages/protocol/src/types.ts`. Errors: `{ error: { code, messag
 | Method | Path | Body / query | Returns |
 |---|---|---|---|
 | POST | `/session` | `{ userToken?, visitorToken?, channel }` | `SessionResponse` |
-| GET | `/bootstrap` | | `BootstrapResponse` |
+| GET | `/bootstrap` | | `BootstrapResponse` (`config.availability`: business hours, see below) |
 | GET | `/conversations` | | `{ items: ContactConversation[] }` |
 | POST | `/conversations` | `SendMessageInput` | `{ conversation, message }` |
 | GET | `/conversations/:id` | | `ContactConversation` |
@@ -101,6 +101,16 @@ Websocket client frames: `{ type: "typing", conversationId, isTyping }` and `{ t
 ## Widget embedding
 
 `/widget.js` (loader, no dependencies) injects one iframe pointing at `/widget/`. The iframe's `frame-ancestors` CSP only lists `ALLOWED_ORIGINS` + the origins saved in Settings. Host ↔ iframe talk over `postMessage` with origin checks.
+
+## Business hours
+
+Settings → Business hours (owners): `businessHours` `{ enabled, timezone (IANA), week: [{ day 0–6 (Sunday = 0), ranges: [{ from, to }] }], holidays: ["YYYY-MM-DD"] }` and `awayMessage` (en/fr, empty = the default copy in `strings.ts`). PUT `/settings` checks it all (known zone, `HH:MM` from 00:00 to 24:00, from < to, no overlaps, at most 3 ranges a day and 100 holidays) and stores it sorted. Off = always open.
+
+- The time maths is pure and shared, in `packages/protocol/src/business-hours.ts`: `isOpenAt` and `nextOpening` read the hours in the team's zone with `Intl.DateTimeFormat` (no date library), including clock changes (a range starting in the skipped hour opens when the clocks jump; going back into a range reopens it).
+- The server decides. `config.availability` `{ open, nextOpenAt }` is computed for each bootstrap (the web messenger refetches it on reconnect, the React Native SDK too). Messengers only format `nextOpenAt` in the customer's own zone and language ("We're away — back tomorrow at 09:00"), so they never need time-zone support from the JS engine (Hermes included). Once `nextOpenAt` has passed they show the usual reply time again.
+- **Away message:** when a customer writes while closed, the conversation goes to people (no assistant answering it) and no teammate has replied since closing, the server posts one `away` event (`{ message, backAt }`, visible to the customer) per conversation per closed period. `conversations.away_notified_at` (migration 0007) holds when it was sent: it is sent again only once the team has been open since then, and claimed with a compare-and-set so two messages at once post it once.
+- If the assistant hands off while closed, the `handed_off` marker carries `backAt` (the customer reads "We're away right now — back …") and counts as the away message.
+- The dashboard shows "Outside business hours" in the inbox header while closed.
 
 ## Integrations (API keys, webhook endpoints)
 

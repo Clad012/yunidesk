@@ -47,8 +47,16 @@ export type SystemEvent =
   | { type: "reopened"; agentName: string | null }
   | { type: "snoozed"; agentName: string | null; until: number }
   | { type: "assigned"; agentName: string | null; assigneeName: string | null }
-  /** The customer asked for a person: the AI assistant stops answering this conversation. */
-  | { type: "handed_off"; agentName: null }
+  /**
+   * The customer asked for a person: the AI assistant stops answering this conversation.
+   * `backAt` is set when it happened outside business hours: when the team is back.
+   */
+  | { type: "handed_off"; agentName: null; backAt?: number }
+  /**
+   * Sent automatically when a customer writes outside business hours (once per closed period):
+   * the owner's away message (empty = the default copy) and when the team is back (null = unknown).
+   */
+  | { type: "away"; agentName: null; message: LocalizedText; backAt: number | null }
   /** Team only: never shown to the contact. */
   | { type: "priority"; agentName: string | null; priority: ConversationPriority };
 
@@ -166,6 +174,8 @@ export interface WidgetConfig extends WidgetSettings {
   online: boolean;
   /** Present when an AI assistant answers this visitor first. */
   assistant?: { name: string } | null;
+  /** Business hours, computed when the config was fetched (absent from servers before 0.7). */
+  availability?: Availability;
 }
 
 export interface AdminSettings extends WidgetSettings {
@@ -173,6 +183,41 @@ export interface AdminSettings extends WidgetSettings {
   webhookUrl: string | null;
   hasWebhookSecret: boolean;
   retentionDays: number;
+  /** When the team answers; outside them the messenger says when it is back. */
+  businessHours: BusinessHours;
+  /** Sent once per closed period when a customer writes outside business hours. */
+  awayMessage: LocalizedText;
+}
+
+// ---- Business hours ----
+
+/** "HH:MM" on a 24-hour clock, from "00:00" to "24:00" (end of the day, as an end only). */
+export interface TimeRange {
+  from: string;
+  to: string;
+}
+
+export interface BusinessDay {
+  /** 0 = Sunday … 6 = Saturday. A day missing from the week is closed. */
+  day: number;
+  /** Up to 3 ranges, in order, not overlapping, none crossing midnight. */
+  ranges: TimeRange[];
+}
+
+export interface BusinessHours {
+  /** Off: always open (no away line, no away message). */
+  enabled: boolean;
+  /** IANA time zone the hours are written in ("Europe/Paris"). */
+  timezone: string;
+  week: BusinessDay[];
+  /** Closed all day, "YYYY-MM-DD" in `timezone`. At most 100. */
+  holidays: string[];
+}
+
+export interface Availability {
+  open: boolean;
+  /** When it opens next; null while open, or when it never opens. */
+  nextOpenAt: number | null;
 }
 
 export interface CannedResponse {

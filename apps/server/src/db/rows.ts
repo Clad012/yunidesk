@@ -56,6 +56,8 @@ export interface ConversationRow {
   priority: ConversationPriority;
   /** JSON object of custom field values, keyed by field key. */
   custom_fields: string;
+  /** When the away message was last sent (business hours); once per closed period. */
+  away_notified_at: number | null;
 }
 
 export interface TagRow {

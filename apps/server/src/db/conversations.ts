@@ -13,6 +13,9 @@ import { badRequest, notFound } from "../lib/errors";
 import { newId } from "../lib/ids";
 import { contactChannel, notifyAgents, notifyContact } from "../lib/realtime";
 import { sendWebhook } from "../lib/webhooks";
+import { getSettings } from "../lib/settings";
+import { sameClosedPeriod, teamAway } from "../lib/business-hours";
+import { getAssistant, isAssistantReady } from "../lib/assistant/settings";
 import type { WebhookActor, WebhookContactSummary, WebhookConversationLabels } from "yunidesk/webhooks";
 import {
   mergeCustomFields,
@@ -26,14 +29,14 @@ import { loadConversationTags } from "./tags";
 import { selectIn } from "./rows";
 import { loadAgents, toAgentConversations, toContactConversations, toMessages } from "./serialize";
 
-/** What a contact may see: their and the team's messages, plus the "resolved" marker. Never notes. */
-export const CONTACT_VISIBLE_SQL = `(kind = 'text' OR (kind = 'event' AND json_extract(event, '$.type') IN ('resolved', 'handed_off')))`;
+/** What a contact may see: their and the team's messages, the "resolved", hand-off and away markers. Never notes. */
+export const CONTACT_VISIBLE_SQL = `(kind = 'text' OR (kind = 'event' AND json_extract(event, '$.type') IN ('resolved', 'handed_off', 'away')))`;
 
 export function isVisibleToContact(row: Pick<MessageRow, "kind" | "event">): boolean {
   if (row.kind === "text") return true;
   if (row.kind !== "event" || !row.event) return false;
   const type = (JSON.parse(row.event) as SystemEvent).type;
-  return type === "resolved" || type === "handed_off";
+  return type === "resolved" || type === "handed_off" || type === "away";
 }
 
 export type Author =
@@ -568,10 +571,15 @@ export async function handOffToTeam(
   origin: string,
   conversation: ConversationRow,
 ): Promise<ConversationRow> {
+  const now = Date.now();
+  // Outside business hours the marker says when the team is back, and counts as the away message.
+  const away = teamAway((await getSettings(env)).businessHours, now);
   const changed = await env.DB.prepare(
-    "UPDATE conversations SET ai_state = 'handed_off', ai_lock_until = NULL, status = 'open', updated_at = ? WHERE id = ? AND ai_state = 'active'",
+    `UPDATE conversations SET ai_state = 'handed_off', ai_lock_until = NULL, status = 'open', updated_at = ?,
+       away_notified_at = CASE WHEN ? THEN ? ELSE away_notified_at END
+     WHERE id = ? AND ai_state = 'active'`,
   )
-    .bind(Date.now(), conversation.id)
+    .bind(now, away ? 1 : 0, now, conversation.id)
     .run();
   const current = await getConversation(env, conversation.id);
   if (!changed.meta.changes) return current;
@@ -584,8 +592,54 @@ export async function handOffToTeam(
     "event",
     { body: "", attachmentIds: [], clientId: null },
     [],
-    { type: "handed_off", agentName: null },
+    away?.backAt ? { type: "handed_off", agentName: null, backAt: away.backAt } : { type: "handed_off", agentName: null },
   );
   ctx.waitUntil(sendConversationUpdated(env, updated, { type: "contact", id: updated.contact_id }));
   return updated;
+}
+
+/**
+ * Outside business hours, a customer writing to the team (not to the assistant) gets the away
+ * message once per closed period. The claim on `away_notified_at` makes two messages sent at the
+ * same time post it once.
+ */
+export async function postAwayMessage(
+  env: Env,
+  ctx: ExecutionContext,
+  origin: string,
+  conversationId: string,
+  /** The customer is signed in (the assistant may skip anonymous visitors). */
+  identified: boolean,
+): Promise<void> {
+  const settings = await getSettings(env);
+  const now = Date.now();
+  const away = teamAway(settings.businessHours, now);
+  if (!away) return;
+  const conversation = await getConversation(env, conversationId);
+  if (conversation.last_message_author !== "contact") return;
+  if (sameClosedPeriod(settings.businessHours, conversation.away_notified_at, now)) return;
+  // Someone on the team already answered since closing: they're here, don't say they're away.
+  if (sameClosedPeriod(settings.businessHours, conversation.last_agent_message_at, now)) return;
+  // The assistant answers this one; if it hands off, its marker says when the team is back.
+  const assistant = await getAssistant(env);
+  const assistantTakesIt =
+    isAssistantReady(assistant) &&
+    (conversation.ai_state === null || conversation.ai_state === "active") &&
+    (identified || assistant.allowAnonymous);
+  if (assistantTakesIt) return;
+  const claimed = await env.DB.prepare("UPDATE conversations SET away_notified_at = ? WHERE id = ? AND away_notified_at IS ?")
+    .bind(now, conversation.id, conversation.away_notified_at)
+    .run();
+  if (!claimed.meta.changes) return;
+  await insertMessage(
+    env,
+    ctx,
+    origin,
+    await getConversation(env, conversation.id),
+    { type: "system", agent: null },
+    "event",
+    { body: "", attachmentIds: [], clientId: null },
+    [],
+    { type: "away", agentName: null, message: settings.awayMessage, backAt: away.backAt },
+  );
 }

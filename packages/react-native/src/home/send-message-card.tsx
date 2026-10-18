@@ -1,5 +1,5 @@
 import { Pressable, Text, View } from "react-native";
-import { replyTimeLabel, type SupportStrings, type WidgetConfig } from "yunidesk";
+import { isAwayNow, replyStatusLabel, type Locale, type SupportStrings, type WidgetConfig } from "yunidesk";
 import type { ResolvedTheme } from "../theme/theme";
 import { Icon } from "../ui/icons";
 
@@ -8,11 +8,15 @@ export interface SendMessageCardProps {
   online: boolean;
   theme: ResolvedTheme;
   strings: SupportStrings;
+  locale: Locale;
+  now: number;
   onPress: () => void;
 }
 
-export function SendMessageCard({ config, online, theme, strings, onPress }: SendMessageCardProps) {
-  const status = online ? strings.online : replyTimeLabel(strings, config.replyTime);
+export function SendMessageCard({ config, online: teamOnline, theme, strings, locale, now, onPress }: SendMessageCardProps) {
+  // Outside business hours: when the team is back, even if someone happens to be online.
+  const online = teamOnline && !isAwayNow(config.availability, now);
+  const status = online ? strings.online : replyStatusLabel(strings, config, now, locale);
   return (
     <Pressable
       onPress={onPress}
