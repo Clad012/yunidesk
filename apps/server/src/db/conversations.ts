@@ -556,6 +556,8 @@ export async function postAwayMessage(
   const conversation = await getConversation(env, conversationId);
   if (conversation.last_message_author !== "contact") return;
   if (sameClosedPeriod(settings.businessHours, conversation.away_notified_at, now)) return;
+  // Someone on the team already answered since closing: they're here, don't say they're away.
+  if (sameClosedPeriod(settings.businessHours, conversation.last_agent_message_at, now)) return;
   // The assistant answers this one; if it hands off, its marker says when the team is back.
   const assistant = await getAssistant(env);
   const assistantTakesIt =
