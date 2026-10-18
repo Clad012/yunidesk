@@ -117,9 +117,15 @@ export function useSupportSession({ baseUrl, getUserToken, userId, storage }: Se
       client.on("session", setContact),
       client.on("reconnected", () => {
         setSyncTick((tick) => tick + 1);
+        // The config too: business hours may have opened or closed while the app slept.
+        const started = generation.current;
         client
-          .listConversations()
-          .then(({ items }) => !cancelled && dispatch({ type: "conversations", conversations: items }))
+          .bootstrap()
+          .then((boot) => {
+            if (cancelled || generation.current !== started) return;
+            setConfig(boot.config);
+            dispatch({ type: "conversations", conversations: boot.conversations });
+          })
           .catch(() => undefined);
       }),
     ];
