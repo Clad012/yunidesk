@@ -13,7 +13,7 @@ packages/react-native  (npm: yunidesk-react-native) Native messenger for Expo / 
 
 ## Data (all pinned to the EU)
 
-- **D1** `yunidesk` (`--jurisdiction eu`): agents, sessions, invites, contacts, conversations, messages (+ FTS5), attachments, settings, saved replies. Schema: `apps/server/migrations`.
+- **D1** `yunidesk` (`--jurisdiction eu`): agents, sessions, invites, contacts, conversations, messages (+ FTS5), attachments, settings, saved replies, tags (`tags`, `conversation_tags`), custom field definitions (`conversation_fields`; values in `conversations.custom_fields`). Schema: `apps/server/migrations`.
 - **R2** `yunidesk-files` (`jurisdiction: eu`): attachments (private, served through signed links) and team avatars (public).
 - **Durable Objects** (`DATA_JURISDICTION=eu`): `InboxHub` (one, the team's live room) and `ContactChannel` (one per contact, all their tabs/devices). Hibernatable websockets.
 
@@ -23,7 +23,7 @@ D1 is the source of truth. Writes go through REST; the Worker then pushes events
 
 | Caller | Auth | Sees |
 |---|---|---|
-| Contact (widget, app) | `Authorization: Bearer <session>` from `POST /api/v1/session` | Their own conversations; never internal notes or assignment events |
+| Contact (widget, app) | `Authorization: Bearer <session>` from `POST /api/v1/session` | Their own conversations; never internal notes, assignment or priority events, tags, priority or custom fields |
 | Teammate (dashboard) | `__Host-ys_session` cookie (HttpOnly, Secure, SameSite=Strict) + Origin check on writes and websockets | Everything |
 | Host backend | — | Signs identity tokens with `IDENTITY_SECRET`; receives signed webhooks |
 
@@ -62,12 +62,14 @@ Shapes are in `packages/protocol/src/types.ts`. Errors: `{ error: { code, messag
 | GET | `/auth/invites/:token` | `{ email, role }` |
 | POST | `/auth/invites/:token/accept` | `{ name, password }` |
 | GET | `/bootstrap` | `{ agent: Agent, teammates: PublicAgent[], settings: AdminSettings }` |
-| GET | `/conversations` | `?view=mine\|unassigned\|open\|snoozed\|resolved\|all&q=&cursor=&contactId=` → `Page<AgentConversation>` |
+| GET | `/conversations` | `?view=mine\|unassigned\|open\|snoozed\|resolved\|all&q=&cursor=&contactId=&tag=&priority=low\|normal\|high\|urgent&sort=priority` → `Page<AgentConversation>` (`sort=priority`: urgent first, newest first within each) |
 | GET | `/conversations/counts` | `InboxCounts` |
 | GET | `/conversations/:id` | `AgentConversation` |
 | GET | `/conversations/:id/messages` | `?before=` → `Page<Message>` (includes notes and events) |
 | POST | `/conversations/:id/messages` | `AgentSendMessageInput` (`kind: "text"\|"note"`); first reply auto-assigns |
-| PATCH | `/conversations/:id` | `{ status?, snoozedUntil?, assigneeId? }` |
+| PATCH | `/conversations/:id` | `{ status?, snoozedUntil?, assigneeId?, priority?, customFields? }`; `customFields` (`{ key: value \| null }`) merges, null clears; a priority change adds an internal event |
+| POST | `/conversations/:id/tags` | `{ tagId }` or `{ name, color? }` (created when missing) → `AgentConversation`; no timeline event |
+| DELETE | `/conversations/:id/tags/:tagId` | → `AgentConversation` |
 | POST | `/conversations/:id/read` | |
 | POST | `/attachments` | multipart `file` |
 | GET | `/contacts` | `?q=&cursor=` → `Page<Contact>` |
@@ -82,6 +84,11 @@ Shapes are in `packages/protocol/src/types.ts`. Errors: `{ error: { code, messag
 | PATCH | `/team/:id` | owner; `{ role?, disabled? }` |
 | GET/PUT | `/settings` | `AdminSettings` (PUT owner, partial) |
 | POST | `/settings/webhook-secret` | owner; `{ secret }` shown once |
+| GET/POST | `/tags` | `{ items: TagWithUsage[] }` (with total and open counts); POST `{ name, color }`, any teammate |
+| PATCH/DELETE | `/tags/:id` | owner; `{ name?, color? }` (palette: `TAG_COLORS`); delete removes it from every conversation |
+| GET/POST | `/conversation-fields` | `{ items: ConversationField[] }`; POST owner `{ key, label, type: text\|number\|select\|checkbox\|date, options? }` |
+| PATCH/DELETE | `/conversation-fields/:id` | owner; `{ label?, options? }` (key and type are fixed); delete clears its values everywhere |
+| POST | `/conversation-fields/reorder` | owner; `{ ids }` (every field, in the new order) |
 | GET/POST | `/canned-responses` | `{ shortcut, title, body }` |
 | PUT/DELETE | `/canned-responses/:id` | |
 | GET | `/ws` | websocket → `AgentServerEvent` frames |
@@ -104,7 +111,7 @@ See [INTEGRATIONS.md](INTEGRATIONS.md). In short:
 
 ## Webhooks
 
-`POST <url>` with `{ id, event, createdAt, data }` and `X-Yunidesk-Signature: t=<ms>,v1=<hex HMAC-SHA256("<t>.<body>")>` (one `v1` per active secret while a secret is being rolled). Events: `conversation.created`, `message.created`, `conversation.updated`, `conversation.rated`, `conversation.unread_reply` (a reply unread for 2 minutes — send the push notification from here).
+`POST <url>` with `{ id, event, createdAt, data }` and `X-Yunidesk-Signature: t=<ms>,v1=<hex HMAC-SHA256("<t>.<body>")>` (one `v1` per active secret while a secret is being rolled). Events: `conversation.created`, `message.created`, `conversation.updated` (status, assignee, priority, tags or custom fields), `conversation.rated`, `conversation.unread_reply` (a reply unread for 2 minutes — send the push notification from here). `conversation.created` and `conversation.updated` carry `priority`, `tags` (names) and `customFields`.
 
 ## Jobs (cron)
 - every minute: retry due webhook deliveries

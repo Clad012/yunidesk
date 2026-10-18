@@ -12,9 +12,14 @@ import type {
   AgentSendMessageInput,
   ApiKey,
   Contact,
+  ConversationField,
+  ConversationPriority,
+  CustomFieldValue,
   Message,
   Page,
   PublicAgent,
+  TagColor,
+  TagWithUsage,
   WebhookDelivery,
   WebhookEndpoint,
   WebhookEndpointWithSecret,
@@ -50,6 +55,10 @@ export interface ConversationPatch {
   snoozedUntil?: number | null;
   /** A teammate id from `teammates()`, or null to unassign. */
   assigneeId?: string | null;
+  /** Team only; adds an internal timeline event. */
+  priority?: ConversationPriority;
+  /** Merged into the stored values; null clears one. Keys come from `conversationFields.list()`. */
+  customFields?: Record<string, CustomFieldValue | null>;
 }
 
 export interface WebhookEndpointInput {
@@ -116,8 +125,19 @@ export function createYunideskApi(options: YunideskApiOptions) {
     events: { list: () => call<{ items: WebhookEventDescriptor[] }>("GET", "/events") },
 
     conversations: {
-      list: (params: { view?: ConversationView; q?: string; cursor?: string; contactId?: string } = {}) =>
-        call<Page<AgentConversation>>("GET", `/conversations${query(params)}`),
+      list: (
+        params: {
+          view?: ConversationView;
+          q?: string;
+          cursor?: string;
+          contactId?: string;
+          /** A tag id: only conversations carrying it. */
+          tag?: string;
+          priority?: ConversationPriority;
+          /** "priority": urgent first, newest first within each priority. */
+          sort?: "priority";
+        } = {},
+      ) => call<Page<AgentConversation>>("GET", `/conversations${query(params)}`),
       get: (conversationId: string) => call<AgentConversation>("GET", `/conversations/${id(conversationId)}`),
       /** Oldest to newest; `nextCursor` points at an older page. Includes notes and events. */
       messages: (conversationId: string, params: { before?: string } = {}) =>
@@ -130,6 +150,22 @@ export function createYunideskApi(options: YunideskApiOptions) {
         }),
       update: (conversationId: string, patch: ConversationPatch) =>
         call<AgentConversation>("PATCH", `/conversations/${id(conversationId)}`, patch),
+      /** Adds a tag by id, or by name (created when missing). Team only. */
+      addTag: (conversationId: string, tag: { tagId: string } | { name: string; color?: TagColor }) =>
+        call<AgentConversation>("POST", `/conversations/${id(conversationId)}/tags`, tag),
+      removeTag: (conversationId: string, tagId: string) =>
+        call<AgentConversation>("DELETE", `/conversations/${id(conversationId)}/tags/${id(tagId)}`),
+    },
+
+    /** Tags (scope conversations:read to list, conversations:write to create). Renaming and deleting are owner settings. */
+    tags: {
+      list: () => call<{ items: TagWithUsage[] }>("GET", "/tags"),
+      create: (input: { name: string; color?: TagColor }) => call<TagWithUsage>("POST", "/tags", input),
+    },
+
+    /** Custom fields the owners defined (values are set with `conversations.update`). */
+    conversationFields: {
+      list: () => call<{ items: ConversationField[] }>("GET", "/conversation-fields"),
     },
 
     contacts: {
