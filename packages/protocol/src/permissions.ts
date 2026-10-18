@@ -31,6 +31,8 @@ export const PERMISSIONS = [
   "sso.manage",
   /** Reports: volumes, response times, satisfaction, per teammate and per tag (with CSV export). */
   "reports.view",
+  /** Teams, their members, assignment rules, the fallback and per-teammate limits. */
+  "teams.manage",
 ] as const;
 export type Permission = (typeof PERMISSIONS)[number];
 
@@ -47,6 +49,7 @@ const ADMIN: readonly Permission[] = [
   "assistant.manage",
   "auditLog.read",
   "reports.view",
+  "teams.manage",
 ];
 
 /** Everyone signed in can read the inbox, contacts, teammates and saved replies, and edit their own profile. */

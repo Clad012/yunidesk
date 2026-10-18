@@ -1,4 +1,4 @@
-import { AlarmClockIcon, CircleCheckIcon, Clock3Icon, FlagIcon, HandIcon, MailWarningIcon, RotateCcwIcon, UserRoundIcon, type LucideIcon } from "lucide-react";
+import { AlarmClockIcon, CircleCheckIcon, Clock3Icon, FlagIcon, HandIcon, MailWarningIcon, RotateCcwIcon, UserRoundIcon, UsersRoundIcon, type LucideIcon } from "lucide-react";
 import type { SystemEvent, TimelineMessage } from "yunidesk";
 import { copy, fmt } from "@/lib/copy";
 import { formatClock, formatUntil } from "@/lib/time";
@@ -13,6 +13,8 @@ export function eventText(event: SystemEvent): string {
     case "snoozed":
       return fmt(copy.events.snoozed, { agent, time: formatUntil(event.until) });
     case "assigned":
+      // No teammate behind it: the assignment rules picked someone.
+      if (event.agentName === null && event.assigneeName) return fmt(copy.teams.eventAutoAssigned, { assignee: event.assigneeName });
       return event.assigneeName ? fmt(copy.events.assigned, { agent, assignee: event.assigneeName }) : fmt(copy.events.unassigned, { agent });
     case "handed_off":
       return copy.events.handedOff;
@@ -22,6 +24,9 @@ export function eventText(event: SystemEvent): string {
       return copy.events.away;
     case "email_failed":
       return event.reason ? fmt(copy.emailMessage.failedEvent, { reason: event.reason }) : copy.emailMessage.failedEventNoReason;
+    case "team":
+      if (event.agentName === null) return fmt(copy.teams.eventRouted, { team: event.teamName ?? copy.teams.noTeam });
+      return event.teamName ? fmt(copy.teams.eventMoved, { agent, team: event.teamName }) : fmt(copy.teams.eventRemoved, { agent });
   }
 }
 
@@ -34,6 +39,7 @@ const ICONS: Record<SystemEvent["type"], LucideIcon> = {
   priority: FlagIcon,
   away: Clock3Icon,
   email_failed: MailWarningIcon,
+  team: UsersRoundIcon,
 };
 
 export function EventRow({ message }: { message: TimelineMessage }) {

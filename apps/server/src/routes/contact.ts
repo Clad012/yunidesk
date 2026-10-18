@@ -13,9 +13,9 @@ import {
   markRead,
   postMessage,
   rateConversation,
-  handOffToTeam,
   postAwayMessage,
 } from "../db/conversations";
+import { handOffAndRoute, routeConversation } from "../db/routing";
 import { teamAvailability } from "../lib/business-hours";
 import type { AgentRow, ContactRow, ConversationRow, MessageRow } from "../db/rows";
 import { toAttachment, toContactConversations, toContactMessage, toContactProfile, toMessages, toPublicAgent } from "../db/serialize";
@@ -234,9 +234,15 @@ contactRoutes.post("/conversations", async (c) => {
   const contact = c.get("contact");
   await limit(c.env.WRITE_LIMITER, `contact:${contact.id}`);
   const draft = await readBody(c, draftSchema);
-  const result = await createConversation(c.env, c.executionCtx as ExecutionContext, publicOrigin(c), contact.id, channelOf(c), draft);
+  const ctx = c.executionCtx as ExecutionContext;
+  const origin = publicOrigin(c);
+  const result = await createConversation(c.env, ctx, origin, contact.id, channelOf(c), draft);
+  const conversationId = result.conversation.id;
+  // The assistant answers first when it can; otherwise the conversation goes to people now (rules).
   c.executionCtx.waitUntil(
-    runAssistantTurn(c.env, c.executionCtx as ExecutionContext, publicOrigin(c), result.conversation.id, clientIp(c)),
+    runAssistantTurn(c.env, ctx, origin, conversationId, clientIp(c))
+      .catch((error: unknown) => (console.error("assistant turn failed", error), false))
+      .then((answering) => (answering ? undefined : routeConversation(c.env, ctx, origin, conversationId))),
   );
   c.executionCtx.waitUntil(awayReply(c, result.conversation.id));
   const [conversation] = await toContactConversations(c.env, [result.conversation]);
@@ -294,7 +300,7 @@ contactRoutes.post("/conversations/:id/messages", async (c) => {
 contactRoutes.post("/conversations/:id/handoff", async (c) => {
   const contact = c.get("contact");
   await limit(c.env.WRITE_LIMITER, `contact:${contact.id}`);
-  const updated = await handOffToTeam(c.env, c.executionCtx as ExecutionContext, publicOrigin(c), await ownConversation(c));
+  const updated = await handOffAndRoute(c.env, c.executionCtx as ExecutionContext, publicOrigin(c), await ownConversation(c));
   const [conversation] = await toContactConversations(c.env, [updated]);
   return c.json(conversation);
 });

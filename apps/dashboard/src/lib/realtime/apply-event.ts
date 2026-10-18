@@ -23,8 +23,9 @@ function refreshCounts(qc: QueryClient): void {
   if (countsTimer) clearTimeout(countsTimer);
   countsTimer = setTimeout(() => {
     void qc.invalidateQueries({ queryKey: queryKeys.counts });
-    // Per-tag open counts in the views pane.
+    // Per-tag and per-team open counts in the views pane.
     void qc.invalidateQueries({ queryKey: queryKeys.tags });
+    void qc.invalidateQueries({ queryKey: queryKeys.teams });
   }, 250);
 }
 
@@ -127,6 +128,18 @@ export function applyEvent(qc: QueryClient, event: AgentServerEvent, meId: strin
       return;
     case "contact.deleted":
       applyContactDeleted(qc, event.contactId);
+      return;
+    case "agent.availability":
+      qc.setQueryData<Bootstrap>(queryKeys.bootstrap, (b) =>
+        b
+          ? {
+              ...b,
+              agent: b.agent.id === event.agentId ? { ...b.agent, availability: event.availability } : b.agent,
+              teammates: b.teammates.map((t) => (t.id === event.agentId ? { ...t, availability: event.availability } : t)),
+            }
+          : b,
+      );
+      void qc.invalidateQueries({ queryKey: queryKeys.teams });
       return;
   }
 }

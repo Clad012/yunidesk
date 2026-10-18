@@ -37,6 +37,7 @@ export function conversation(id: string, lastMessageAt: number, patch: Partial<A
     tags: [],
     priority: "normal",
     customFields: {},
+    team: null,
     ...patch,
   };
 }

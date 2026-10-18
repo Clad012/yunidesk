@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import type { AgentConversation, ConversationPriority, CustomFields, CustomFieldValue } from "yunidesk";
+import type { AgentConversation, ConversationPriority, CustomFields, CustomFieldValue, TeamRef } from "yunidesk";
 import { copy, fmt } from "@/lib/copy";
 import { errorMessage } from "@/lib/api";
 import { endpoints, queryKeys, type ConversationPatch } from "@/lib/endpoints";
@@ -16,6 +16,7 @@ function toastFor(patch: ConversationPatch, result: AgentConversation): string |
   if (patch.assigneeId !== undefined) {
     return result.assignee ? fmt(copy.conversation.assigned, { name: result.assignee.name }) : copy.conversation.unassignedToast;
   }
+  if (patch.teamId !== undefined) return result.team ? fmt(copy.teams.moved, { name: result.team.name }) : copy.teams.removed;
   return null;
 }
 
@@ -31,6 +32,7 @@ function mergeFields(current: CustomFields, patch: Record<string, CustomFieldVal
 /** Status, snooze, assignment, priority and field changes, applied optimistically to every cached list. */
 export function useConversationActions(conversation: AgentConversation | undefined) {
   const qc = useQueryClient();
+  const teams = qc.getQueryData<{ items: TeamRef[] }>(queryKeys.teams)?.items ?? [];
   const { agent, teammates } = useBootstrap();
 
   const mutation = useMutation({
@@ -49,6 +51,10 @@ export function useConversationActions(conversation: AgentConversation | undefin
           assignee,
           priority: patch.priority ?? conversation.priority,
           customFields: patch.customFields ? mergeFields(conversation.customFields, patch.customFields) : conversation.customFields,
+          team:
+            patch.teamId === undefined
+              ? conversation.team
+              : (teams.map(({ id, name }) => ({ id, name })).find((t) => t.id === patch.teamId) ?? null),
         },
         agent.id,
       );
@@ -77,5 +83,6 @@ export function useConversationActions(conversation: AgentConversation | undefin
     assign: (assigneeId: string | null) => mutation.mutate({ assigneeId }),
     setPriority: (priority: ConversationPriority) => mutation.mutate({ priority }),
     setField: (key: string, value: CustomFieldValue | null) => mutation.mutate({ customFields: { [key]: value } }),
+    setTeam: (teamId: string | null) => mutation.mutate({ teamId }),
   };
 }

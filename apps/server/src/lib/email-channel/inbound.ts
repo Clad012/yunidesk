@@ -2,6 +2,7 @@ import PostalMime, { type Email } from "postal-mime";
 import { MAX_ATTACHMENTS_PER_MESSAGE, MAX_MESSAGE_LENGTH, type EmailAuthentication } from "yunidesk";
 import type { Env } from "../../env";
 import { createConversation, postMessage, type InsertOptions } from "../../db/conversations";
+import { routeConversation } from "../../db/routing";
 import type { ContactRow, ConversationRow } from "../../db/rows";
 import { selectIn } from "../../db/rows";
 import { ApiError } from "../errors";
@@ -262,5 +263,7 @@ export async function ingestEmail(env: Env, ctx: ExecutionContext, origin: strin
     return { outcome: "appended", conversationId: continued.conversationId, verified: auth.verified };
   }
   const { conversation } = await createConversation(env, ctx, origin, contactId, "email", draft, { ...options, subject });
+  // Email goes straight to people (the assistant doesn't answer email): run the assignment rules.
+  await routeConversation(env, ctx, origin, conversation.id);
   return { outcome: "created", conversationId: conversation.id, verified: auth.verified };
 }

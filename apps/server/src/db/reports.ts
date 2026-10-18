@@ -31,6 +31,7 @@ export interface ReportFilter {
   tagId?: string;
   /** A teammate id; null for unassigned conversations. */
   assigneeId?: string | null;
+  teamId?: string;
 }
 
 export interface ReportPeriod {
@@ -54,7 +55,7 @@ export function filterSql(filter: ReportFilter): { sql: string; values: unknown[
   if (filter.tagId) parts.push("c.id IN (SELECT conversation_id FROM conversation_tags WHERE tag_id = ?)"), values.push(filter.tagId);
   if (filter.assigneeId === null) parts.push("c.assignee_id IS NULL");
   else if (filter.assigneeId) parts.push("c.assignee_id = ?"), values.push(filter.assigneeId);
-  // Teams add one line here: `if (filter.teamId) parts.push("c.team_id = ?"), values.push(filter.teamId);`
+  if (filter.teamId) parts.push("c.team_id = ?"), values.push(filter.teamId);
   return { sql: parts.map((part) => ` AND ${part}`).join(""), values };
 }
 

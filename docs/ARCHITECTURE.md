@@ -13,7 +13,7 @@ packages/react-native  (npm: yunidesk-react-native) Native messenger for Expo / 
 
 ## Data (all pinned to the EU)
 
-- **D1** `yunidesk` (`--jurisdiction eu`): agents, sessions, invites, contacts, conversations, messages (+ FTS5), attachments, settings, saved replies, tags (`tags`, `conversation_tags`), custom field definitions (`conversation_fields`; values in `conversations.custom_fields`), push subscriptions, inbound emails as received (`email_originals`). Schema: `apps/server/migrations`.
+- **D1** `yunidesk` (`--jurisdiction eu`): agents, sessions, invites, contacts, conversations, messages (+ FTS5), attachments, settings, saved replies, tags (`tags`, `conversation_tags`), custom field definitions (`conversation_fields`; values in `conversations.custom_fields`), push subscriptions, inbound emails as received (`email_originals`), teams (`teams`, `team_members`, `conversations.team_id`, teammate `availability` and `max_open` on `agents`) and assignment rules (`assignment_rules`; the fallback in `settings` under `assignment`). Schema: `apps/server/migrations`.
   Report facts live on `conversations` (see [Reports](#reports)).
 - **R2** `yunidesk-files` (`jurisdiction: eu`): attachments (private, served through signed links) and team avatars (public).
 - **Durable Objects** (`DATA_JURISDICTION=eu`): `InboxHub` (one, the team's live room) and `ContactChannel` (one per contact, all their tabs/devices). Hibernatable websockets.
@@ -24,7 +24,7 @@ D1 is the source of truth. Writes go through REST; the Worker then pushes events
 
 | Caller | Auth | Sees |
 |---|---|---|
-| Contact (widget, app) | `Authorization: Bearer <session>` from `POST /api/v1/session` | Their own conversations; never internal notes, assignment or priority events, tags, priority or custom fields |
+| Contact (widget, app) | `Authorization: Bearer <session>` from `POST /api/v1/session` | Their own conversations; never internal notes, assignment, team or priority events, tags, priority, custom fields or teams |
 | Teammate (dashboard) | `__Host-ys_session` cookie (HttpOnly, Secure, SameSite=Strict) + Origin check on writes and websockets; password or single sign-on | Everything their role allows (below) |
 | Host backend | — | Signs identity tokens with `IDENTITY_SECRET`; receives signed webhooks |
 
@@ -36,12 +36,13 @@ One table, `packages/protocol/src/permissions.ts` (`can(role, action)`), used by
 
 | | owner | admin | agent | viewer |
 |---|:-:|:-:|:-:|:-:|
-| Read inbox, contacts, teammates, saved replies; edit own profile | ✓ | ✓ | ✓ | ✓ |
-| Reply, notes, attachments (`inbox.reply`); assign, snooze, resolve, mark read (`inbox.update`) | ✓ | ✓ | ✓ | |
+| Read inbox, contacts, teammates, saved replies, teams; edit own profile and availability | ✓ | ✓ | ✓ | ✓ |
+| Reply, notes, attachments (`inbox.reply`); assign, move to a team, snooze, resolve, mark read (`inbox.update`) | ✓ | ✓ | ✓ | |
 | Saved replies (`savedReplies.manage`) | ✓ | ✓ | ✓ | |
 | Export / erase contacts (`contacts.export`, `contacts.erase`) | ✓ | ✓ | | |
 | Settings, API keys, webhooks, assistant, audit log | ✓ | ✓ | | |
 | Invite, change and disable non-owners (`team.manage`) | ✓ | ✓ | | |
+| Teams, members, assignment rules, fallback and limits (`teams.manage`) | ✓ | ✓ | | |
 | Make, change, disable or invite owners (`team.manageOwners`); single sign-on (`sso.manage`) | ✓ | | | |
 
 Team rules (`checkMemberChange`): there is always at least one active owner, only owners touch owners, nobody disables themselves. A role change or a disable closes that person's live sockets; pending invites go when their sender loses the right to send them. Viewers' typing signals are dropped by `InboxHub`.
@@ -92,13 +93,13 @@ Shapes are in `packages/protocol/src/types.ts`. Errors: `{ error: { code, messag
 | GET | `/auth/sso/callback` | provider redirect URI → dashboard or `/login?sso_error=` |
 | GET | `/auth/invites/:token` | `{ email, role }` |
 | POST | `/auth/invites/:token/accept` | `{ name, password }` |
-| GET | `/bootstrap` | `{ agent: Agent, teammates: PublicAgent[], settings: AdminSettings }` |
-| GET | `/conversations` | `?view=mine\|unassigned\|open\|snoozed\|resolved\|all&q=&cursor=&contactId=&tag=&priority=low\|normal\|high\|urgent&sort=priority` → `Page<AgentConversation>` (`sort=priority`: urgent first, newest first within each) |
+| GET | `/bootstrap` | `{ agent: Agent, teammates: Teammate[], settings: AdminSettings }` (teammates carry `availability`) |
+| GET | `/conversations` | `?view=mine\|unassigned\|open\|snoozed\|resolved\|all&q=&cursor=&contactId=&tag=&team=&priority=low\|normal\|high\|urgent&sort=priority` → `Page<AgentConversation>` (`sort=priority`: urgent first, newest first within each) |
 | GET | `/conversations/counts` | `InboxCounts` |
 | GET | `/conversations/:id` | `AgentConversation` |
 | GET | `/conversations/:id/messages` | `?before=` → `Page<Message>` (includes notes and events) |
 | POST | `/conversations/:id/messages` | `AgentSendMessageInput` (`kind: "text"\|"note"`); first reply auto-assigns |
-| PATCH | `/conversations/:id` | `{ status?, snoozedUntil?, assigneeId?, priority?, customFields? }`; `customFields` (`{ key: value \| null }`) merges, null clears; a priority change adds an internal event |
+| PATCH | `/conversations/:id` | `{ status?, snoozedUntil?, assigneeId?, priority?, customFields?, teamId? }`; `customFields` (`{ key: value \| null }`) merges, null clears; a priority or team change adds an internal event (a team move keeps the assignee) |
 | POST | `/conversations/:id/tags` | `{ tagId }` or `{ name, color? }` (created when missing) → `AgentConversation`; no timeline event |
 | DELETE | `/conversations/:id/tags/:tagId` | → `AgentConversation` |
 | POST | `/conversations/:id/read` | |
@@ -127,6 +128,12 @@ Shapes are in `packages/protocol/src/types.ts`. Errors: `{ error: { code, messag
 | GET | `/conversations/:id/messages/:messageId/email` | `EmailOriginal`: the whole inbound email as text, sender checks |
 | GET/PATCH | `/email` | `EmailChannelSettings` (PATCH `settings.manage`; session only) |
 | POST | `/email/test` | `settings.manage`; sends a test email to yourself → `EmailTestResult` |
+| GET/POST | `/teams` | `{ items: Team[] }` (members with availability and open load, open/unassigned counts); POST `teams.manage` `{ name }` (unique, ignoring case; up to 50) |
+| PATCH/DELETE | `/teams/:id` | `teams.manage`; `{ name }`; delete takes its conversations out of the team (assignees stay) and deletes its rules |
+| PUT/DELETE | `/teams/:id/members/:agentId` | `teams.manage`; add / remove a teammate → `Team` |
+| GET/PUT | `/assignment` | `AssignmentSettings` `{ rules, fallback }`; PUT `teams.manage`, replaces the whole ordered list (up to 50 rules) |
+| PATCH | `/assignment/teammates/:id` | `teams.manage`; `{ maxOpen: 1..1000 \| null }`, a teammate's limit on automatic assignment |
+| PUT | `/me/availability` | any teammate; `{ availability: "available" \| "away" }` → `{ agent }`; broadcast as `{ type: "agent.availability" }` |
 | GET/POST | `/canned-responses` | `{ shortcut, title, body }` (POST `savedReplies.manage`) |
 | PUT/DELETE | `/canned-responses/:id` | `savedReplies.manage` |
 | GET | `/reports/summary` | `reports.view` (or a key with `reports:read`); `?from=&to=` (YYYY-MM-DD, both included, ≤ 366 days) `&tz=` (IANA, default UTC) `&channel=&tagId=&assigneeId=<id>\|none` → `ReportSummary` (period, the period before, open/snoozed now) |
@@ -207,7 +214,15 @@ See [INTEGRATIONS.md](INTEGRATIONS.md). In short:
 
 ## Webhooks
 
-`POST <url>` with `{ id, event, createdAt, data }` and `X-Yunidesk-Signature: t=<ms>,v1=<hex HMAC-SHA256("<t>.<body>")>` (one `v1` per active secret while a secret is being rolled). Events: `conversation.created`, `message.created`, `conversation.updated` (status, assignee, priority, tags or custom fields), `conversation.rated`, `conversation.unread_reply` (a reply unread for 2 minutes — send the push notification from here). `conversation.created` and `conversation.updated` carry `priority`, `tags` (names) and `customFields`.
+`POST <url>` with `{ id, event, createdAt, data }` and `X-Yunidesk-Signature: t=<ms>,v1=<hex HMAC-SHA256("<t>.<body>")>` (one `v1` per active secret while a secret is being rolled). Events: `conversation.created`, `message.created`, `conversation.updated` (status, assignee, priority, tags or custom fields), `conversation.rated`, `conversation.unread_reply` (a reply unread for 2 minutes — send the push notification from here). `conversation.created` and `conversation.updated` carry `priority`, `tags` (names), `customFields`, `teamId` and `team` (its name). Rules route a conversation right after `conversation.created` (whose team is always null); the routing sends `conversation.updated` with a `system` actor.
+
+## Teams and automatic assignment
+
+- A teammate can be in several teams. Each teammate is `available` or `away` (`AgentAvailability`, profile menu; not to be confused with business-hours `Availability`); away teammates still get messages but are never assigned automatically, and neither are viewers (they can't reply). `teams.manage` (owners, admins) can cap how many open conversations a teammate gets automatically (`max_open`). Team, membership, rule, fallback and limit changes are audited (`teams.*`, `assignment.*`).
+- **Rules** (Settings → Teams & assignment) are ordered; the first whose conditions all match wins. Conditions: channel (`web`, `app` = iOS/Android, `email`), language (`en`/`fr`, only known for email: detected on the first inbound email, `email_originals.locale`; a language rule never matches chat), identified or anonymous contact, has a tag, contact attribute equals a value (as text, ignoring case). Action: move to a team, then assign by `round_robin`, `least_busy` (fewest open assigned conversations, ties to the next in turn) or `none`. Without a match, the fallback either leaves the conversation unassigned or sends it to a default team.
+- **When they run** (`apps/server/src/db/routing.ts`): on a new conversation the AI assistant doesn't take (inbound email included), and when the assistant hands one off. Business hours don't change routing. Never on a conversation that already has an assignee or a team. They don't wait for tags added later through the API: tags set while the assistant answers do count at hand-off.
+- **Race safety:** each team keeps whose turn it was and an `assign_version`. The pick is applied in one D1 batch (one transaction) that compare-and-sets the version and routes the conversation only if it is still unrouted; a writer that lost re-reads and chooses again, so two conversations arriving together never take the same round-robin turn. The choice itself is a pure function (`apps/server/src/lib/assignment.ts`).
+- Every change of assignee (a teammate or key, the rules, a first reply) goes through `assignmentChanged` in `db/conversations.ts`, once: it writes the timeline event and sends the "assigned to you" push (actor null = the rules; none for a first reply). A first reply still assigns an unassigned conversation to the replier, as before.
 
 ## Email channel
 

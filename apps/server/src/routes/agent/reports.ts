@@ -15,6 +15,7 @@ const querySchema = z.object({
   channel: z.enum(CHANNELS as [string, ...string[]]).optional(),
   tagId: z.string().regex(/^tag_[0-9a-z]{26}$/, "must be a tag id").optional(),
   assigneeId: z.union([z.literal("none"), z.string().regex(/^agt_[0-9a-z]{1,40}$/, "must be a teammate id or none")]).optional(),
+  teamId: z.string().regex(/^tem_[0-9a-z]{26}$/, "must be a team id").optional(),
   format: z.enum(["json", "csv"]).default("json"),
 });
 
@@ -38,6 +39,7 @@ export function parseReportQuery(raw: Record<string, string>): ReportPeriod & { 
       ...(q.channel ? { channel: q.channel as ReportPeriod["filter"]["channel"] } : {}),
       ...(q.tagId ? { tagId: q.tagId } : {}),
       ...(q.assigneeId ? { assigneeId: q.assigneeId === "none" ? null : q.assigneeId } : {}),
+      ...(q.teamId ? { teamId: q.teamId } : {}),
     },
   };
 }

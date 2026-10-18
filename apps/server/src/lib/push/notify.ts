@@ -54,8 +54,8 @@ export type PushEvent =
   | { kind: "newConversation"; conversation: ConversationRow; preview: string }
   /** A customer wrote in an assigned conversation. */
   | { kind: "assignedMessage"; conversation: ConversationRow; preview: string }
-  /** `actor` assigned the conversation (to `conversation.assignee_id`). */
-  | { kind: "assigned"; conversation: ConversationRow; actor: { id: string; name: string } }
+  /** `actor` assigned the conversation (to `conversation.assignee_id`); a null actor is the assignment rules. */
+  | { kind: "assigned"; conversation: ConversationRow; actor: { id: string | null; name: string | null } }
   /** The AI assistant handed the conversation over to the team. */
   | { kind: "handoff"; conversation: ConversationRow };
 

@@ -29,6 +29,10 @@ describe("who gets a push", () => {
     const event = { kind: "assigned", conversation: conversation("bob"), actor: { id: "ana", name: "Ana" } } as const;
     expect(pushRecipients(event, team, nobodyLooking)).toEqual(["bob"]);
     expect(pushRecipients({ ...event, actor: { id: "bob", name: "Bob" } }, team, nobodyLooking)).toEqual([]);
+    // The assignment rules have no actor: the assignee is told, with no "by" name.
+    const byRules = { ...event, actor: { id: null, name: null } };
+    expect(pushRecipients(byRules, team, nobodyLooking)).toEqual(["bob"]);
+    expect(pushPayload(byRules, "Jo").body).toBe("Assigned to you");
   });
 
   it("a handoff goes to the assignee if there is one, otherwise to everyone who wants it", () => {

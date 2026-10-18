@@ -3,6 +3,7 @@ import { copy, fmt } from "@/lib/copy";
 import { useBootstrap } from "@/hooks/use-bootstrap";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useTags } from "@/features/tags/use-tags";
+import { useTeams } from "@/features/teams/use-teams";
 import { browserTimeZone, isValidRange, presetRange, RANGE_PRESETS, todayIn, type RangePreset } from "./lib/range";
 import type { ReportParams } from "./use-report-params";
 
@@ -54,6 +55,7 @@ export function ReportFilters({ params }: { params: ReportParams }) {
   const { search, preset, setSearch } = params;
   const { teammates } = useBootstrap();
   const tags = useTags();
+  const teams = useTeams();
   const choosePreset = (value: string) => {
     if (value !== "custom") return setSearch({ range: value === "7d" ? null : value, from: null, to: null });
     // Start the custom range from what is on screen.
@@ -94,6 +96,15 @@ export function ReportFilters({ params }: { params: ReportParams }) {
         anyLabel={copy.reports.anyAssignee}
         options={[{ value: "none", label: copy.reports.unassigned }, ...teammates.map((t) => ({ value: t.id, label: t.name }))]}
       />
+      {teams.data?.items.length ? (
+        <FilterSelect
+          label={copy.reports.team}
+          value={search.team}
+          onChange={(team) => setSearch({ team })}
+          anyLabel={copy.reports.anyTeam}
+          options={teams.data.items.map((t) => ({ value: t.id, label: t.name }))}
+        />
+      ) : null}
       <span className="ml-auto text-xs text-muted-foreground">{fmt(copy.reports.timeZone, { tz: browserTimeZone() })}</span>
     </div>
   );

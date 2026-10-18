@@ -31,8 +31,9 @@ export function useReportParams(): ReportParams {
       ...(search.channel ? { channel: search.channel } : {}),
       ...(search.tag ? { tagId: search.tag } : {}),
       ...(search.assignee ? { assigneeId: search.assignee } : {}),
+      ...(search.team ? { teamId: search.team } : {}),
     };
-  }, [preset, search.from, search.to, search.channel, search.tag, search.assignee]);
+  }, [preset, search.from, search.to, search.channel, search.tag, search.assignee, search.team]);
 
   const setSearch: ReportParams["setSearch"] = (patch) => {
     const next: Record<string, string> = {};

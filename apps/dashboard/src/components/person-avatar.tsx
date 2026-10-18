@@ -5,6 +5,8 @@ interface PersonAvatarProps {
   name: string | null;
   avatarUrl?: string | null;
   online?: boolean;
+  /** A teammate who set themselves away: an amber dot (wins over online). */
+  away?: boolean;
   className?: string;
   /** Stable seed for the fallback colour (contact or agent id). */
   seed?: string;
@@ -25,14 +27,18 @@ function tint(seed: string): string {
   return TINTS[Math.abs(hash) % TINTS.length]!;
 }
 
-export function PersonAvatar({ name, avatarUrl, online, className, seed }: PersonAvatarProps) {
+export function PersonAvatar({ name, avatarUrl, online, away, className, seed }: PersonAvatarProps) {
   return (
     <span className="relative inline-flex shrink-0">
       <Avatar className={cn("size-8", className)}>
         {avatarUrl ? <AvatarImage src={avatarUrl} alt="" /> : null}
         <AvatarFallback className={tint(seed ?? name ?? "?")}>{initials(name)}</AvatarFallback>
       </Avatar>
-      {online ? <span className="absolute right-0 bottom-0 size-2.5 rounded-full bg-success ring-2 ring-card" /> : null}
+      {away ? (
+        <span className="absolute right-0 bottom-0 size-2.5 rounded-full bg-amber-500 ring-2 ring-card" />
+      ) : online ? (
+        <span className="absolute right-0 bottom-0 size-2.5 rounded-full bg-success ring-2 ring-card" />
+      ) : null}
     </span>
   );
 }

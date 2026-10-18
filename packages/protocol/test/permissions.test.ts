@@ -14,6 +14,7 @@ describe("what each role can do", () => {
     expect(can("admin", "contacts.erase")).toBe(true);
     expect(can("admin", "auditLog.read")).toBe(true);
     expect(can("admin", "reports.view")).toBe(true);
+    expect(can("admin", "teams.manage")).toBe(true);
   });
 
   it("keeps agents in the inbox and viewers read-only", () => {
@@ -24,6 +25,8 @@ describe("what each role can do", () => {
     expect(can("agent", "auditLog.read")).toBe(false);
     expect(can("agent", "reports.view")).toBe(false);
     expect(can("viewer", "reports.view")).toBe(false);
+    expect(can("agent", "teams.manage")).toBe(false);
+    expect(can("viewer", "teams.manage")).toBe(false);
     expect(can("viewer", "inbox.reply")).toBe(false);
     expect(can("viewer", "inbox.update")).toBe(false);
     expect(can("viewer", "savedReplies.manage")).toBe(false);
@@ -32,6 +35,7 @@ describe("what each role can do", () => {
   it("lists the roles holding a permission, for SQL filters", () => {
     expect(rolesWith("team.manage")).toEqual(["owner", "admin"]);
     expect(rolesWith("team.manageOwners")).toEqual(["owner"]);
+    expect(rolesWith("teams.manage")).toEqual(["owner", "admin"]);
   });
 
   it("only offers owner invites to owners", () => {

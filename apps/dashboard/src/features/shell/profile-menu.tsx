@@ -19,6 +19,7 @@ import {
   DropdownMenuShortcut,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { AvailabilityItems } from "./availability-items";
 import { shortcutsOpenStore } from "./shortcuts-store";
 
 export function ProfileMenu() {
@@ -39,13 +40,15 @@ export function ProfileMenu() {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger className="rounded-full outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50" aria-label={copy.nav.profile}>
-        <PersonAvatar name={agent.name} avatarUrl={agent.avatarUrl} seed={agent.id} className="size-9" />
+        <PersonAvatar name={agent.name} avatarUrl={agent.avatarUrl} seed={agent.id} away={agent.availability === "away"} className="size-9" />
       </DropdownMenuTrigger>
       <DropdownMenuContent side="right" align="end" className="w-60">
         <DropdownMenuLabel className="flex flex-col gap-0.5">
           <span className="text-sm font-medium text-foreground">{agent.name}</span>
           <span className="truncate font-normal">{agent.email}</span>
         </DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        <AvailabilityItems />
         <DropdownMenuSeparator />
         <DropdownMenuItem onSelect={() => void navigate({ to: "/settings/$section", params: { section: "profile" } })}>
           <UserRoundIcon /> {copy.nav.profile}

@@ -17,6 +17,7 @@ export function useInboxParams(): InboxParams {
   const search = useSearch({ strict: false }) as InboxSearch;
   const filters: ListFilters = {};
   if (search.tag) filters.tag = search.tag;
+  if (search.team) filters.team = search.team;
   if (search.priority) filters.priority = search.priority;
   if (search.sort) filters.sort = search.sort;
   const carried: InboxSearch = { ...filters, ...(search.q ? { q: search.q } : {}) };

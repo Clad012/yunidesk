@@ -1,5 +1,5 @@
 import { Link, Outlet } from "@tanstack/react-router";
-import { BotIcon, BracesIcon, Clock3Icon, CodeIcon, KeyRoundIcon, LogInIcon, MailIcon, MessageCircleIcon, MessageSquareTextIcon, ScrollTextIcon, ShieldCheckIcon, TagsIcon, UserRoundIcon, UsersIcon, type LucideIcon } from "lucide-react";
+import { BotIcon, BracesIcon, Clock3Icon, CodeIcon, KeyRoundIcon, LogInIcon, MailIcon, MessageCircleIcon, MessageSquareTextIcon, ScrollTextIcon, ShieldCheckIcon, TagsIcon, UserRoundIcon, UsersIcon, UsersRoundIcon, type LucideIcon } from "lucide-react";
 import { can, type Permission } from "yunidesk";
 import { useBootstrap } from "@/hooks/use-bootstrap";
 import { copy } from "@/lib/copy";
@@ -16,6 +16,7 @@ const GROUPS: { title: string; items: { section: SettingsSection; label: string;
       { section: "install", label: copy.settings.sections.install, icon: CodeIcon },
       { section: "email", label: copy.settings.sections.email, icon: MailIcon },
       { section: "team", label: copy.settings.sections.team, icon: UsersIcon },
+      { section: "teams", label: copy.teams.section, icon: UsersRoundIcon },
       { section: "saved-replies", label: copy.settings.sections.savedReplies, icon: MessageSquareTextIcon },
       { section: "tags-fields", label: copy.settings.sections.tagsFields, icon: TagsIcon },
       { section: "webhooks", label: copy.settings.sections.webhooks, icon: BracesIcon },

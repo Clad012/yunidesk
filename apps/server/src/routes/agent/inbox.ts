@@ -23,6 +23,7 @@ const patchSchema = z.object({
   assigneeId: z.string().max(64).nullish(),
   priority: z.enum(CONVERSATION_PRIORITIES).optional(),
   customFields: z.record(z.string().max(64), z.unknown()).optional(),
+  teamId: z.string().max(64).nullish(),
 });
 const prioritySchema = z.enum(CONVERSATION_PRIORITIES);
 
@@ -101,6 +102,9 @@ inboxRoutes.get("/", async (c) => {
 
   const tag = c.req.query("tag");
   if (tag) where.push("id IN (SELECT conversation_id FROM conversation_tags WHERE tag_id = ?)"), values.push(tag);
+
+  const team = c.req.query("team");
+  if (team) where.push("team_id = ?"), values.push(team);
 
   const priority = c.req.query("priority");
   if (priority) {
@@ -241,6 +245,7 @@ inboxRoutes.patch("/:id", async (c) => {
       assigneeId: patch.assigneeId === undefined ? undefined : patch.assigneeId,
       priority: patch.priority,
       customFields: patch.customFields,
+      teamId: patch.teamId === undefined ? undefined : patch.teamId,
     },
   );
   const [result] = await withOnline(c, [updated]);

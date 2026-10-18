@@ -11,6 +11,7 @@ export interface ReportSearch {
   tag?: string;
   /** A teammate id, or "none" for unassigned. */
   assignee?: string;
+  team?: string;
 }
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -24,5 +25,6 @@ export function parseReportSearch(search: Record<string, unknown>): ReportSearch
   if (typeof search.channel === "string" && (CHANNELS as string[]).includes(search.channel)) out.channel = search.channel as Channel;
   if (typeof search.tag === "string" && /^tag_[0-9a-z]{26}$/.test(search.tag)) out.tag = search.tag;
   if (typeof search.assignee === "string" && /^(none|agt_[0-9a-z]{1,40})$/.test(search.assignee)) out.assignee = search.assignee;
+  if (typeof search.team === "string" && /^tem_[0-9a-z]{26}$/.test(search.team)) out.team = search.team;
   return out;
 }
