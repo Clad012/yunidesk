@@ -1,4 +1,4 @@
-import { Pressable, ScrollView, Text, View } from "react-native";
+import { Linking, Pressable, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { LinkedText } from "../conversation/linked-text";
 import { useSupportCore } from "../provider/support-context";
@@ -35,6 +35,7 @@ export function SupportHelpArticle({ articleId, onAsk, onBack, onClose, safeTop 
               {article.title}
             </Text>
             <LinkedText text={article.body} style={{ color: theme.text, fontSize: 16, lineHeight: 24 }} linkColor={theme.accent} />
+            {article.helpCenterUrl ? <HelpCenterLink url={article.helpCenterUrl} label={strings.openInHelpCenter} color={theme.accent} /> : null}
           </View>
         ) : null}
         <View style={{ marginTop: 28, borderRadius: 18, backgroundColor: theme.surface, padding: 18, gap: 6 }}>
@@ -60,5 +61,19 @@ export function SupportHelpArticle({ articleId, onAsk, onBack, onClose, safeTop 
         </View>
       </ScrollView>
     </View>
+  );
+}
+
+/** "Open in the help center": the same answer as a web page, in the browser. */
+function HelpCenterLink({ url, label, color }: { url: string; label: string; color: string }) {
+  return (
+    <Pressable
+      onPress={() => void Linking.openURL(url).catch(() => undefined)}
+      accessibilityRole="link"
+      hitSlop={8}
+      style={({ pressed }) => ({ alignSelf: "flex-start", opacity: pressed ? 0.6 : 1 })}
+    >
+      <Text style={{ color, fontSize: 15, fontWeight: "600" }}>{label} ↗</Text>
+    </Pressable>
   );
 }

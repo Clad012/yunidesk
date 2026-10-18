@@ -187,6 +187,8 @@ export interface AdminSettings extends WidgetSettings {
   businessHours: BusinessHours;
   /** Sent once per closed period when a customer writes outside business hours. */
   awayMessage: LocalizedText;
+  /** The public help center at /help (knowledge items marked published). */
+  helpCenter: HelpCenterSettings;
 }
 
 // ---- Business hours ----
@@ -347,6 +349,8 @@ export interface HelpArticle {
   title: string;
   body: string;
   updatedAt: number;
+  /** Its page in the public help center, when the help center is on and the entry is published. */
+  helpCenterUrl?: string | null;
 }
 
 export interface SendMessageInput {
@@ -465,6 +469,16 @@ export interface KnowledgeItem {
   body: string;
   /** The language it is written in, or null for every language. Help shows customers their own. */
   locale: Locale | null;
+  /** Its address in the help center (`/help/<locale>/<slug>`); unique per language. */
+  slug: string;
+  /** Help center section it is listed under; null lists it under "General". */
+  category: string | null;
+  /** Shown in the public help center. New FAQ entries start published, articles start private. */
+  published: boolean;
+  /** Order inside its category (lowest first, then title). */
+  position: number;
+  /** Items sharing this value are translations of each other (hreflang links). */
+  translationGroup: string | null;
   createdAt: number;
   updatedAt: number;
 }
@@ -475,6 +489,14 @@ export interface KnowledgeInput {
   body: string;
   /** The language it is written in; null or left out for every language. */
   locale?: Locale | null;
+  /** Lowercase letters, digits and dashes. Left out on create: made from the title. */
+  slug?: string;
+  category?: string | null;
+  /** Left out on create: true for FAQ entries, false for articles. */
+  published?: boolean;
+  position?: number;
+  /** The id of the item this one translates (links the two), or null to unlink it. */
+  translationOf?: string | null;
 }
 
 /**
@@ -556,4 +578,15 @@ export interface PushPayload {
   tag: string;
   /** Dashboard path to open on click. */
   url: string;
+}
+
+// ---- Help center ----
+
+/** The public help center: published knowledge items as web pages under /help/<locale>. */
+export interface HelpCenterSettings {
+  enabled: boolean;
+  /** Page title per language; empty uses "<team name> Help Center". */
+  title: LocalizedText;
+  /** Meta description and home page intro per language. */
+  description?: LocalizedText;
 }

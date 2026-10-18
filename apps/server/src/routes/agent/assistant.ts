@@ -4,6 +4,8 @@ import { SUPPORTED_LOCALES, type AssistantSettings, type AssistantTool, type Kno
 import { limit, publicOrigin, readBody, type AppContext, type AppEnv } from "../../app-env";
 import { generateReply } from "../../lib/assistant/engine";
 import { toKnowledgeItem, type KnowledgeRow } from "../../lib/assistant/knowledge";
+import { isSlugConstraintError, resolveSlug, resolveTranslationGroup } from "../../lib/assistant/knowledge-publishing";
+import { ensureSlugs, isValidSlug } from "../../help-center/slug";
 import {
   getAssistant,
   openOpenRouterKey,
@@ -42,6 +44,18 @@ const knowledgeSchema = z.object({
   title: z.string().trim().min(1).max(300),
   body: z.string().trim().min(1).max(20_000),
   locale: z.enum(SUPPORTED_LOCALES as [Locale, ...Locale[]]).nullable().optional(),
+  // Help center
+  slug: z.string().trim().toLowerCase().refine(isValidSlug, "Use lowercase letters, digits and dashes (up to 80; not \"search\")").optional(),
+  category: z
+    .string()
+    .trim()
+    .max(60)
+    .nullable()
+    .optional()
+    .transform((v) => (v === "" ? null : v)),
+  published: z.boolean().optional(),
+  position: z.number().int().min(-1_000_000).max(1_000_000).optional(),
+  translationOf: z.string().max(64).nullable().optional(),
 });
 const inputSchemaSchema = z
   .record(z.string(), z.unknown())
@@ -150,6 +164,7 @@ assistantRoutes.post("/preview", async (c) => {
 // ---- Knowledge ----
 
 assistantRoutes.get("/knowledge", async (c) => {
+  await ensureSlugs(c.env);
   const q = (c.req.query("q") ?? "").trim().slice(0, 200);
   const words = q ? ftsQuery(q) : null;
   const { results } = words
@@ -170,30 +185,68 @@ assistantRoutes.post("/knowledge", async (c) => {
   if ((count?.n ?? 0) >= MAX_KNOWLEDGE_ITEMS) throw conflict(`At most ${MAX_KNOWLEDGE_ITEMS} knowledge items`);
   const now = Date.now();
   const id = newId("kno");
-  await c.env.DB.prepare(
-    "INSERT INTO knowledge_items (id, kind, title, body, locale, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-  )
-    .bind(id, input.kind, input.title, input.body, input.locale ?? null, now, now)
-    .run();
+  const locale = input.locale ?? null;
+  await ensureSlugs(c.env);
+  const slug = await resolveSlug(c.env, { id: null, title: input.title, locale, requested: input.slug, current: null });
+  const link = await resolveTranslationGroup(c.env, { id, locale, translationOf: input.translationOf ?? null, current: null });
+  // FAQ entries are public in the messenger already; articles stay private until published.
+  const published = input.published ?? input.kind === "faq";
+  await runKnowledgeWrite(c, [
+    c.env.DB.prepare(
+      `INSERT INTO knowledge_items (id, kind, title, body, locale, slug, category, published, position, translation_group, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).bind(id, input.kind, input.title, input.body, locale, slug, input.category ?? null, published ? 1 : 0, input.position ?? 0, link.group, now, now),
+    ...seedGroup(c, link.seedTarget, now),
+  ]);
   const row = await c.env.DB.prepare("SELECT * FROM knowledge_items WHERE id = ?").bind(id).first<KnowledgeRow>();
   return c.json<KnowledgeItem>(toKnowledgeItem(row!), 201);
 });
+
+/** The item linked as a translation starts the group with its own id. Touches it so the pages refresh. */
+function seedGroup(c: AppContext, target: string | null, now: number): D1PreparedStatement[] {
+  if (!target) return [];
+  return [c.env.DB.prepare("UPDATE knowledge_items SET translation_group = id, updated_at = ? WHERE id = ?").bind(now, target)];
+}
+
+async function runKnowledgeWrite(c: AppContext, statements: D1PreparedStatement[]): Promise<void> {
+  try {
+    await c.env.DB.batch(statements);
+  } catch (error) {
+    if (isSlugConstraintError(error)) throw conflict("Another item already uses this address in this language");
+    throw error;
+  }
+}
 
 assistantRoutes.patch("/knowledge/:id", async (c) => {
   requireWriter(c);
   const input = await readBody(c, knowledgeSchema.partial());
   const row = await c.env.DB.prepare("SELECT * FROM knowledge_items WHERE id = ?").bind(c.req.param("id")).first<KnowledgeRow>();
   if (!row) throw notFound("Knowledge item not found");
-  await c.env.DB.prepare("UPDATE knowledge_items SET kind = ?, title = ?, body = ?, locale = ?, updated_at = ? WHERE id = ?")
-    .bind(
+  await ensureSlugs(c.env);
+  const locale = input.locale === undefined ? row.locale : input.locale;
+  const title = input.title ?? row.title;
+  const slug = await resolveSlug(c.env, { id: row.id, title, locale, requested: input.slug, current: row.slug });
+  const link = await resolveTranslationGroup(c.env, { id: row.id, locale, translationOf: input.translationOf, current: row.translation_group });
+  const now = Date.now();
+  await runKnowledgeWrite(c, [
+    c.env.DB.prepare(
+      `UPDATE knowledge_items SET kind = ?, title = ?, body = ?, locale = ?, slug = ?, category = ?, published = ?, position = ?,
+       translation_group = ?, updated_at = ? WHERE id = ?`,
+    ).bind(
       input.kind ?? row.kind,
-      input.title ?? row.title,
+      title,
       input.body ?? row.body,
-      input.locale === undefined ? row.locale : input.locale,
-      Date.now(),
+      locale,
+      slug,
+      input.category === undefined ? row.category : input.category,
+      input.published === undefined ? row.published : input.published ? 1 : 0,
+      input.position ?? row.position,
+      link.group,
+      now,
       row.id,
-    )
-    .run();
+    ),
+    ...seedGroup(c, link.seedTarget, now),
+  ]);
   const updated = await c.env.DB.prepare("SELECT * FROM knowledge_items WHERE id = ?").bind(row.id).first<KnowledgeRow>();
   return c.json(toKnowledgeItem(updated!));
 });

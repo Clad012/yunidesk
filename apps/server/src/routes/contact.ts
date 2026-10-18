@@ -220,7 +220,7 @@ contactRoutes.get("/bootstrap", async (c) => {
 
 contactRoutes.get("/help", async (c) => {
   c.header("cache-control", "private, max-age=60");
-  return c.json({ items: await listHelpArticles(c.env, resolveLocale(c.req.query("locale"))) });
+  return c.json({ items: await listHelpArticles(c.env, resolveLocale(c.req.query("locale")), publicOrigin(c)) });
 });
 
 contactRoutes.get("/conversations", async (c) => c.json({ items: await listContactConversations(c) }));

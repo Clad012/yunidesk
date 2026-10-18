@@ -39,6 +39,13 @@ const settingsSchema = z.object({
   retentionDays: z.number().int().min(30).max(3650).optional(),
   businessHours: businessHoursSchema.optional(),
   awayMessage: awayMessageSchema.optional(),
+  helpCenter: z
+    .object({
+      enabled: z.boolean(),
+      title: z.object({ en: z.string().trim().max(80).optional(), fr: z.string().trim().max(80).optional() }),
+      description: z.object({ en: z.string().trim().max(300).optional(), fr: z.string().trim().max(300).optional() }).optional(),
+    })
+    .optional(),
 });
 const cannedSchema = z.object({
   shortcut: z.string().trim().min(1).max(40).regex(/^[\w-]+$/, "Letters, numbers, - and _ only"),

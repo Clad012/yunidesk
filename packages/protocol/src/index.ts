@@ -5,3 +5,4 @@ export * from "./messenger-state";
 export * from "./events";
 export * from "./help";
 export * from "./business-hours";
+export * from "./help-center-strings";

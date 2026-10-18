@@ -114,6 +114,8 @@ const en = {
   backDate: "on {date} at {time}",
   awayMessageDefault: "Thanks for your message! We're away right now, and we'll reply as soon as we're back.",
   handedOffAway: "We've passed you to the team. We're away right now — back {when}.",
+  // Help center
+  openInHelpCenter: "Open in the help center",
 };
 
 export type SupportStrings = typeof en;
@@ -231,6 +233,8 @@ const fr: SupportStrings = {
   backDate: "le {date} à {time}",
   awayMessageDefault: "Merci pour votre message ! Nous sommes absents pour le moment et vous répondrons dès notre retour.",
   handedOffAway: "Nous vous avons transmis à l'équipe. Nous sommes absents pour le moment — de retour {when}.",
+  // Centre d'aide
+  openInHelpCenter: "Ouvrir dans le centre d'aide",
 };
 
 const dictionaries: Record<Locale, SupportStrings> = { en, fr };
