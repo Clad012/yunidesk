@@ -47,6 +47,7 @@ export async function runRetention(env: Env): Promise<Record<string, number>> {
     await deleteObjects(env, files.results.map((f) => f.r2_key));
     await env.DB.batch([
       env.DB.prepare("DELETE FROM attachments WHERE conversation_id = ?").bind(id),
+      env.DB.prepare("DELETE FROM email_originals WHERE message_id IN (SELECT id FROM messages WHERE conversation_id = ?)").bind(id),
       env.DB.prepare("DELETE FROM messages WHERE conversation_id = ?").bind(id),
       env.DB.prepare("DELETE FROM conversations WHERE id = ?").bind(id),
     ]);

@@ -24,8 +24,8 @@ Authorization: Bearer ydk_3f9k2m…
 
 | Scope | Allows |
 |---|---|
-| `conversations:read` | `GET /key`, `/teammates`, `/conversations`, `/conversations/counts`, `/conversations/:id`, `/conversations/:id/messages`, `/tags`, `/conversation-fields` |
-| `conversations:write` | `POST /conversations/:id/messages` (reply or note), `PATCH /conversations/:id` (status, snooze, assignee, priority, custom field values), `POST /conversations/:id/tags`, `DELETE /conversations/:id/tags/:tagId`, `POST /tags`, `POST /attachments` |
+| `conversations:read` | `GET /key`, `/teammates`, `/conversations`, `/conversations/counts`, `/conversations/:id`, `/conversations/:id/messages`, `/conversations/:id/messages/:messageId/email` (the whole inbound email), `/tags`, `/conversation-fields` |
+| `conversations:write` | `POST /conversations/:id/messages` (reply or note; in an email conversation the reply is sent as an email), `PATCH /conversations/:id` (status, snooze, assignee, priority, custom field values), `POST /conversations/:id/tags`, `DELETE /conversations/:id/tags/:tagId`, `POST /tags`, `POST /attachments` |
 | `contacts:read` | `GET /contacts`, `/contacts/:id` |
 | `webhooks:write` | `/webhook-endpoints` (only the endpoints this key created) |
 

@@ -20,6 +20,10 @@ import type {
   ConversationPriority,
   ConversationStatus,
   CustomFieldValue,
+  EmailChannelPatch,
+  EmailChannelSettings,
+  EmailOriginal,
+  EmailTestResult,
   InboxCounts,
   Invite,
   KnowledgeInput,
@@ -126,6 +130,8 @@ export const queryKeys = {
   conversationFields: ["conversation-fields"] as const,
   pushSettings: ["push", "settings"] as const,
   pushPublicKey: ["push", "public-key"] as const,
+  emailChannel: ["email-channel"] as const,
+  messageEmail: (messageId: string) => ["message-email", messageId] as const,
 };
 
 const enc = encodeURIComponent;
@@ -257,4 +263,9 @@ export const endpoints = {
   pushUnsubscribe: (endpoint: string) => api<PushSettings>("/api/agent/push/subscriptions", { method: "DELETE", body: { endpoint } }),
   pushTest: (endpoint: string) =>
     api<{ outcome: "delivered" | "gone" | "failed"; status: number | null }>("/api/agent/push/test", { body: { endpoint } }),
+  emailChannel: () => api<EmailChannelSettings>("/api/agent/email"),
+  patchEmailChannel: (body: EmailChannelPatch) => api<EmailChannelSettings>("/api/agent/email", { method: "PATCH", body: { ...body } }),
+  testEmail: () => api<EmailTestResult>("/api/agent/email/test", { method: "POST" }),
+  messageEmail: (conversationId: string, messageId: string) =>
+    api<EmailOriginal>(`/api/agent/conversations/${enc(conversationId)}/messages/${enc(messageId)}/email`),
 };

@@ -92,8 +92,14 @@ export async function verifyEmailVerifyToken(
 const FILE_LINK_LIFETIME_MS = 12 * 3600 * 1000;
 const HOUR_MS = 3600 * 1000;
 
-export async function signFilePath(secret: string, attachmentId: string, now = Date.now()): Promise<string> {
-  const exp = Math.ceil((now + FILE_LINK_LIFETIME_MS) / HOUR_MS) * HOUR_MS;
+export async function signFilePath(
+  secret: string,
+  attachmentId: string,
+  now = Date.now(),
+  /** Links in emails live longer (the customer may open the email days later). */
+  lifetimeMs = FILE_LINK_LIFETIME_MS,
+): Promise<string> {
+  const exp = Math.ceil((now + lifetimeMs) / HOUR_MS) * HOUR_MS;
   const sig = await hmac(secret, `file:${attachmentId}:${exp}`);
   return `/api/files/${attachmentId}?exp=${exp}&sig=${sig}`;
 }

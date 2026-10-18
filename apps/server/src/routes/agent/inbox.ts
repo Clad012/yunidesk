@@ -1,11 +1,11 @@
 import { Hono } from "hono";
 import { z } from "zod";
-import { CONVERSATION_PRIORITIES, type AgentConversation, type InboxCounts, type Page } from "yunidesk";
+import { CONVERSATION_PRIORITIES, type AgentConversation, type EmailAuthResult, type EmailOriginal, type InboxCounts, type Page } from "yunidesk";
 import { limit, publicOrigin, readBody, type AppContext, type AppEnv } from "../../app-env";
 import { getConversation, markRead, postMessage, updateConversation } from "../../db/conversations";
 import type { ConversationRow, MessageRow } from "../../db/rows";
 import { loadAgents, toAgentConversations, toAttachment, toMessages } from "../../db/serialize";
-import { badRequest } from "../../lib/errors";
+import { badRequest, notFound } from "../../lib/errors";
 import { inboxHub } from "../../lib/realtime";
 import { storeUpload } from "../../lib/uploads";
 
@@ -166,6 +166,42 @@ inboxRoutes.get("/:id/messages", async (c) => {
   return c.json({
     items: await toMessages(c.env, publicOrigin(c), page, await loadAgents(c.env)),
     nextCursor: results.length > MESSAGE_PAGE_SIZE ? (page[0]?.id ?? null) : null,
+  });
+});
+
+interface EmailOriginalRow {
+  message_id: string;
+  from_address: string;
+  from_name: string | null;
+  to_address: string;
+  subject: string | null;
+  sent_at: string | null;
+  text: string;
+  authentication: string | null;
+  skipped_attachments: string | null;
+  email_verified: number | null;
+}
+
+/** "Show full email": the inbound email as received (plain text), with what the receiving server found about the sender. */
+inboxRoutes.get("/:id/messages/:messageId/email", async (c) => {
+  const conversation = await getConversation(c.env, c.req.param("id"));
+  const row = await c.env.DB.prepare(
+    `SELECT o.*, m.email_verified FROM email_originals o JOIN messages m ON m.id = o.message_id
+     WHERE o.message_id = ? AND m.conversation_id = ?`,
+  )
+    .bind(c.req.param("messageId"), conversation.id)
+    .first<EmailOriginalRow>();
+  if (!row) throw notFound("No email for this message");
+  const auth = row.authentication ? (JSON.parse(row.authentication) as Record<"spf" | "dkim" | "dmarc", EmailAuthResult | null>) : null;
+  return c.json<EmailOriginal>({
+    messageId: row.message_id,
+    from: { address: row.from_address, name: row.from_name },
+    to: row.to_address,
+    subject: row.subject,
+    sentAt: row.sent_at,
+    text: row.text,
+    authentication: { spf: auth?.spf ?? null, dkim: auth?.dkim ?? null, dmarc: auth?.dmarc ?? null, verified: row.email_verified === 1 },
+    skippedAttachments: row.skipped_attachments ? (JSON.parse(row.skipped_attachments) as string[]) : [],
   });
 });
 

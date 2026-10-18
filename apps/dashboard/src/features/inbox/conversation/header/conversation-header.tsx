@@ -10,6 +10,7 @@ import { Tip } from "@/components/ui/tooltip";
 import { ChannelIcon } from "@/components/channel-icon";
 import { contactLabel } from "../../lib/labels";
 import { AiAnsweringChip } from "../ai-answering-chip";
+import { UnverifiedBadge } from "../email/unverified-badge";
 import type { useConversationActions } from "../use-conversation-actions";
 import { AssignMenu } from "./assign-menu";
 import { PriorityMenu } from "./priority-menu";
@@ -47,6 +48,12 @@ export function ConversationHeader({ conversation, actions, panelOpen, onToggleP
       <div className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden">
         <h2 className="min-w-0 truncate font-semibold">{contactLabel(conversation.contact)}</h2>
         <ChannelIcon channel={conversation.channel} className="size-3.5 shrink-0 text-muted-foreground" />
+        {conversation.subject ? (
+          <span className="min-w-0 truncate text-sm text-muted-foreground" title={conversation.subject}>
+            {conversation.subject}
+          </span>
+        ) : null}
+        {conversation.channel === "email" && !conversation.contact.emailVerified ? <UnverifiedBadge hint={copy.emailMessage.unverifiedContactHint} /> : null}
         <span className="hidden shrink-0 lg:inline-flex"><StatusBadge conversation={conversation} /></span>
         {conversation.aiActive ? <AiAnsweringChip /> : null}
       </div>

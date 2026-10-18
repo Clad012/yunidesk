@@ -86,10 +86,18 @@ contactAdminRoutes.get("/:id/export", async (c) => {
       .bind(conversation.id)
       .all<MessageRow>();
     const messages = await toMessages(c.env, publicOrigin(c), results);
+    // Emails they sent, as received (the messages above only keep the new part).
+    const originals = await c.env.DB.prepare(
+      `SELECT o.message_id, o.text FROM email_originals o JOIN messages m ON m.id = o.message_id WHERE m.conversation_id = ?`,
+    )
+      .bind(conversation.id)
+      .all<{ message_id: string; text: string }>();
+    const fullEmails = new Map(originals.results.map((o) => [o.message_id, o.text]));
     exported.push({
       id: conversation.id,
       status: conversation.status,
       channel: conversation.channel,
+      ...(conversation.subject ? { subject: conversation.subject } : {}),
       createdAt: new Date(conversation.created_at).toISOString(),
       rating: conversation.rating_score ? { score: conversation.rating_score, comment: conversation.rating_comment } : null,
       messages: messages.map((m) => ({
@@ -98,6 +106,7 @@ contactAdminRoutes.get("/:id/export", async (c) => {
         text: m.body,
         event: m.event?.type ?? null,
         attachments: m.attachments.map((a) => ({ name: a.fileName, type: a.contentType, size: a.size, url: a.url })),
+        ...(fullEmails.has(m.id) ? { fullEmail: fullEmails.get(m.id) } : {}),
       })),
     });
   }
@@ -133,6 +142,10 @@ contactAdminRoutes.delete("/:id", async (c) => {
       `DELETE FROM attachments WHERE (uploader_type = 'contact' AND uploader_id = ?)
          OR conversation_id IN (SELECT id FROM conversations WHERE contact_id = ?)`,
     ).bind(contact.id, contact.id),
+    c.env.DB.prepare(
+      `DELETE FROM email_originals WHERE message_id IN
+         (SELECT id FROM messages WHERE conversation_id IN (SELECT id FROM conversations WHERE contact_id = ?))`,
+    ).bind(contact.id),
     // Explicit rather than relying on ON DELETE CASCADE, so the FTS trigger sees every row.
     c.env.DB.prepare(
       "DELETE FROM messages WHERE conversation_id IN (SELECT id FROM conversations WHERE contact_id = ?)",

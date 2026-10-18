@@ -13,7 +13,7 @@ packages/react-native  (npm: yunidesk-react-native) Native messenger for Expo / 
 
 ## Data (all pinned to the EU)
 
-- **D1** `yunidesk` (`--jurisdiction eu`): agents, sessions, invites, contacts, conversations, messages (+ FTS5), attachments, settings, saved replies, tags (`tags`, `conversation_tags`), custom field definitions (`conversation_fields`; values in `conversations.custom_fields`), push subscriptions. Schema: `apps/server/migrations`.
+- **D1** `yunidesk` (`--jurisdiction eu`): agents, sessions, invites, contacts, conversations, messages (+ FTS5), attachments, settings, saved replies, tags (`tags`, `conversation_tags`), custom field definitions (`conversation_fields`; values in `conversations.custom_fields`), push subscriptions, inbound emails as received (`email_originals`). Schema: `apps/server/migrations`.
 - **R2** `yunidesk-files` (`jurisdiction: eu`): attachments (private, served through signed links) and team avatars (public).
 - **Durable Objects** (`DATA_JURISDICTION=eu`): `InboxHub` (one, the team's live room) and `ContactChannel` (one per contact, all their tabs/devices). Hibernatable websockets.
 
@@ -30,6 +30,8 @@ D1 is the source of truth. Writes go through REST; the Worker then pushes events
 **Identity verification.** Signed-in users are identified by a short-lived HS256 token your backend signs with `IDENTITY_SECRET` (`signUserToken` from `yunidesk/identity`). Without a valid token a caller can only be an anonymous visitor (if allowed in settings). Anonymous visitors keep a 180-day visitor token in the widget's own storage.
 
 **Secrets** (`wrangler secret put`): `SESSION_SECRET`, `IDENTITY_SECRET`, `SETUP_TOKEN` (first owner only), optional `RESEND_API_KEY` + `EMAIL_FROM`.
+
+**Email channel** (optional): var `EMAIL_INBOUND_ADDRESS` (or Settings → Email), binding `SEND_EMAIL` (`send_email`, Cloudflare Email Service) and/or `RESEND_API_KEY`, optional `EMAIL_AUTHSERV_ID` (default `mx.cloudflare.net`). See [Email channel](#email-channel).
 
 ## API
 
@@ -89,6 +91,9 @@ Shapes are in `packages/protocol/src/types.ts`. Errors: `{ error: { code, messag
 | GET/POST | `/conversation-fields` | `{ items: ConversationField[] }`; POST owner `{ key, label, type: text\|number\|select\|checkbox\|date, options? }` |
 | PATCH/DELETE | `/conversation-fields/:id` | owner; `{ label?, options? }` (key and type are fixed); delete clears its values everywhere |
 | POST | `/conversation-fields/reorder` | owner; `{ ids }` (every field, in the new order) |
+| GET | `/conversations/:id/messages/:messageId/email` | `EmailOriginal`: the whole inbound email as text, sender checks |
+| GET/PATCH | `/email` | `EmailChannelSettings` (PATCH owner; session only) |
+| POST | `/email/test` | owner; sends a test email to yourself → `EmailTestResult` |
 | GET/POST | `/canned-responses` | `{ shortcut, title, body }` |
 | PUT/DELETE | `/canned-responses/:id` | |
 | GET | `/ws` | websocket → `AgentServerEvent` frames |
@@ -157,8 +162,22 @@ See [INTEGRATIONS.md](INTEGRATIONS.md). In short:
 
 `POST <url>` with `{ id, event, createdAt, data }` and `X-Yunidesk-Signature: t=<ms>,v1=<hex HMAC-SHA256("<t>.<body>")>` (one `v1` per active secret while a secret is being rolled). Events: `conversation.created`, `message.created`, `conversation.updated` (status, assignee, priority, tags or custom fields), `conversation.rated`, `conversation.unread_reply` (a reply unread for 2 minutes — send the push notification from here). `conversation.created` and `conversation.updated` carry `priority`, `tags` (names) and `customFields`.
 
+## Email channel
+
+`apps/server/src/lib/email-channel/`. Cloudflare Email Routing hands emails for the support address and `reply+<token>@<its domain>` to the worker's `email()` handler (`inbound.ts`):
+
+1. Refused: channel off, over 10 MB, unknown recipient, more than 20 emails an hour from one sender. Ignored (accepted, nothing created): auto-replies, bounces, list mail (`Auto-Submitted`, `X-Autoreply`, `Precedence`, `multipart/report`), our own addresses or Message-IDs, duplicates.
+2. Parsed with `postal-mime`. The text/plain part is preferred; HTML-only emails are converted to text (`html-text.ts`); HTML is never shown. Quoted history and signatures are stripped (`quotes.ts`: "On … wrote:", "Le … a écrit :", Outlook header blocks, `>` quotes, `-- `); the whole text is kept in `email_originals` ("Show full email").
+3. Sender check (`auth-results.ts`): the topmost `Authentication-Results` / `ARC-Authentication-Results` from the trusted authserv-id. Verified = DMARC pass for the From domain, or a DKIM pass aligned with it. SPF alone is not enough.
+4. Threading (`threading.ts`): the signed reply+ token (HMAC of the conversation id with `SESSION_SECRET`), then `In-Reply-To`/`References` against stored Message-IDs. It continues a conversation only from that conversation's customer; unverified senders only through the token and never into an identified contact. Otherwise a new conversation (`channel = 'email'`, `subject`). New conversations go to a contact who already proved the address (identified, or verified by an earlier email) when the sender is verified; unverified senders get their own unverified email contact.
+5. Attachments go through the upload rules (`storeAttachment`), at most 5; small inline images (logos) are skipped.
+
+A team reply (`kind: "text"`, never notes) in an email conversation is queued on the message (`email_status = 'pending'`) and sent at once (`outbound.ts`) through the Cloudflare `send_email` binding or Resend (`transport.ts`), composed in `compose.ts`: From `"<teammate> via <team>" <from>`, Reply-To the reply+ address, `In-Reply-To` the customer's last email and `References` the thread, subject `Re: <subject>`, text + escaped HTML with the brand colour and a footer line (en/fr), attachments as 30-day signed links. Failures are retried by the every-minute cron (1 min, 5 min, 30 min, 2 h, 6 h); after the last try, or at once for permanent errors, the message is `failed` and an `email_failed` event (team only) appears in the conversation. Cloudflare Email Service sets its own Message-ID (we store the one it returns); with Resend we set ours.
+
+Messages carry `email` metadata for the team only (`toContactMessage` strips it). The unread-reply email to visitors is skipped for email conversations: the reply already was an email.
+
 ## Jobs (cron)
-- every minute: retry due webhook deliveries
+- every minute: retry due webhook deliveries and email replies
 - every 5 min: wake snoozed conversations
 - daily: purge unsent uploads (1 day), resolved conversations older than `retentionDays`, silent anonymous visitors (30 days), webhook delivery logs (30 days), expired sessions/invites
 

@@ -13,6 +13,7 @@ import { badRequest, notFound } from "../lib/errors";
 import { newId } from "../lib/ids";
 import { sendPush } from "../lib/push/notify";
 import { contactChannel, notifyAgents, notifyContact } from "../lib/realtime";
+import { deliverEmailReply } from "../lib/email-channel/outbound";
 import { sendWebhook } from "../lib/webhooks";
 import { getSettings } from "../lib/settings";
 import { sameClosedPeriod, teamAway } from "../lib/business-hours";
@@ -28,7 +29,7 @@ import {
 import type { AgentRow, AttachmentRow, ContactRow, ConversationFieldRow, ConversationRow, MessageRow } from "./rows";
 import { loadConversationTags } from "./tags";
 import { selectIn } from "./rows";
-import { loadAgents, toAgentConversations, toContactConversations, toMessages } from "./serialize";
+import { loadAgents, toAgentConversations, toContactConversations, toContactMessage, toMessages } from "./serialize";
 
 /** What a contact may see: their and the team's messages, the "resolved", hand-off and away markers. Never notes. */
 export const CONTACT_VISIBLE_SQL = `(kind = 'text' OR (kind = 'event' AND json_extract(event, '$.type') IN ('resolved', 'handed_off', 'away')))`;
@@ -52,6 +53,21 @@ export interface MessageDraft {
 }
 
 const PREVIEW_LENGTH = 280;
+
+/** How an inbound email message arrived (the email channel). */
+export interface InboundEmailMeta {
+  messageId: string | null;
+  inReplyTo: string | null;
+  /** DMARC or aligned DKIM passed. */
+  verified: boolean;
+}
+
+export interface InsertOptions {
+  ai?: boolean;
+  email?: InboundEmailMeta;
+  /** Written in the same batch as the message (e.g. the email's full text), given the new message id. */
+  extraStatements?: (messageId: string) => D1PreparedStatement[];
+}
 
 export function actorOf(author: Author): WebhookActor {
   if (author.type === "contact") return { type: "contact", id: author.contactId };
@@ -143,19 +159,21 @@ export async function createConversation(
   contactId: string,
   channel: Channel,
   draft: MessageDraft,
+  options: InsertOptions & { subject?: string | null } = {},
 ): Promise<{ conversation: ConversationRow; message: Message }> {
   const author: Author = { type: "contact", contactId };
   const attachments = await validateDraft(env, author, draft);
   const now = Date.now();
   const id = newId("cnv");
   await env.DB.prepare(
-    `INSERT INTO conversations (id, contact_id, status, channel, created_at, updated_at, last_message_at)
-     VALUES (?, ?, 'open', ?, ?, ?, ?)`,
+    `INSERT INTO conversations (id, contact_id, status, channel, created_at, updated_at, last_message_at, subject)
+     VALUES (?, ?, 'open', ?, ?, ?, ?, ?)`,
   )
-    .bind(id, contactId, channel, now, now, now)
+    .bind(id, contactId, channel, now, now, now, options.subject ?? null)
     .run();
   const conversation = await getConversation(env, id);
-  const result = await insertMessage(env, ctx, origin, conversation, author, "text", draft, attachments);
+  const { subject: _subject, ...insertOptions } = options;
+  const result = await insertMessage(env, ctx, origin, conversation, author, "text", draft, attachments, null, insertOptions);
   ctx.waitUntil(sendPush(env, origin, { kind: "newConversation", conversation: result.conversation, preview: draft.body }));
   ctx.waitUntil(
     contactSummary(env, contactId).then((contact) =>
@@ -181,6 +199,7 @@ export async function postMessage(
   author: Author,
   kind: Exclude<MessageKind, "event">,
   draft: MessageDraft,
+  options: InsertOptions = {},
 ): Promise<{ conversation: ConversationRow; message: Message }> {
   if (draft.clientId) {
     const existing = await env.DB.prepare("SELECT * FROM messages WHERE conversation_id = ? AND client_id = ?")
@@ -195,7 +214,7 @@ export async function postMessage(
     }
   }
   const attachments = await validateDraft(env, author, draft);
-  const result = await insertMessage(env, ctx, origin, conversation, author, kind, draft, attachments);
+  const result = await insertMessage(env, ctx, origin, conversation, author, kind, draft, attachments, null, options);
   if (author.type === "contact" && result.conversation.assignee_id) {
     ctx.waitUntil(sendPush(env, origin, { kind: "assignedMessage", conversation: result.conversation, preview: draft.body }));
   }
@@ -212,16 +231,28 @@ async function insertMessage(
   draft: MessageDraft,
   attachments: AttachmentRow[],
   event: SystemEvent | null = null,
-  options: { ai?: boolean } = {},
+  options: InsertOptions = {},
 ): Promise<{ conversation: ConversationRow; message: Message; delivered: Promise<void> }> {
   const now = Math.max(Date.now(), conversation.updated_at);
   const id = newId("msg");
   const body = draft.body.trim();
   const agent = author.type === "contact" ? null : author.agent;
+  // A team reply in an email conversation goes out as an email (notes never do).
+  const emailOut = conversation.channel === "email" && kind === "text" && author.type === "agent";
+  const emailIn = author.type === "contact" ? (options.email ?? null) : null;
+  const email = {
+    direction: emailOut ? "outbound" : emailIn ? "inbound" : null,
+    messageId: emailIn?.messageId ?? null,
+    inReplyTo: emailIn?.inReplyTo ?? null,
+    status: emailOut ? "pending" : null,
+    nextAttemptAt: emailOut ? now : null,
+    verified: emailIn ? (emailIn.verified ? 1 : 0) : null,
+  } as const;
   const statements: D1PreparedStatement[] = [
     env.DB.prepare(
-      `INSERT INTO messages (id, conversation_id, author_type, agent_id, kind, body, event, client_id, created_at, ai)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO messages (id, conversation_id, author_type, agent_id, kind, body, event, client_id, created_at, ai,
+         email_direction, email_message_id, email_in_reply_to, email_status, email_next_attempt_at, email_verified)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).bind(
       id,
       conversation.id,
@@ -233,7 +264,14 @@ async function insertMessage(
       draft.clientId,
       now,
       options.ai ? 1 : 0,
+      email.direction,
+      email.messageId,
+      email.inReplyTo,
+      email.status,
+      email.nextAttemptAt,
+      email.verified,
     ),
+    ...(options.extraStatements?.(id) ?? []),
   ];
   if (attachments.length > 0) {
     statements.push(
@@ -315,6 +353,14 @@ async function insertMessage(
     client_id: draft.clientId,
     created_at: now,
     ai: options.ai ? 1 : 0,
+    email_direction: email.direction,
+    email_message_id: email.messageId,
+    email_in_reply_to: email.inReplyTo,
+    email_status: email.status,
+    email_error: null,
+    email_attempts: 0,
+    email_next_attempt_at: email.nextAttemptAt,
+    email_verified: email.verified,
   };
   const agents = await loadAgents(env);
   const [message] = await toMessages(env, origin, [row], agents);
@@ -337,6 +383,7 @@ async function insertMessage(
     );
     if (author.type === "agent") ctx.waitUntil(contactChannel(env, conversation.contact_id).scheduleUnreadCheck());
   }
+  if (emailOut) ctx.waitUntil(deliverEmailReply(env, ctx, origin, id));
   return { conversation: updated, message: message!, delivered };
 }
 
@@ -358,7 +405,7 @@ async function broadcastMessage(
           env,
           conversation.contact_id,
           isVisibleToContact(row)
-            ? { type: "message.created", message, conversation: contactConversation }
+            ? { type: "message.created", message: toContactMessage(message), conversation: contactConversation }
             : { type: "conversation.updated", conversation: contactConversation },
         ),
       );
@@ -652,4 +699,26 @@ export async function postAwayMessage(
     [],
     { type: "away", agentName: null, message: settings.awayMessage, backAt: away.backAt },
   );
+}
+
+/** A team-only marker in the timeline (e.g. an email that could not be delivered). */
+export async function postSystemEvent(
+  env: Env,
+  ctx: ExecutionContext,
+  origin: string,
+  conversation: ConversationRow,
+  event: SystemEvent,
+): Promise<ConversationRow> {
+  const { conversation: updated } = await insertMessage(
+    env,
+    ctx,
+    origin,
+    conversation,
+    { type: "system", agent: null },
+    "event",
+    { body: "", attachmentIds: [], clientId: null },
+    [],
+    event,
+  );
+  return updated;
 }

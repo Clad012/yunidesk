@@ -38,6 +38,8 @@ export async function notifyUnreadReplies(env: Env, contactId: string): Promise<
       preview,
     });
     // Identified users hear about it from the host app (push) via the webhook above.
+    // Email conversations: the reply itself went out as an email.
+    if (row.channel === "email") continue;
     if (!contact.is_identified && contact.email && contact.email_verified_at) await emailVisitor(env, contact.email);
   }
 }

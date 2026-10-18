@@ -8,7 +8,8 @@ export type ConversationStatus = "open" | "snoozed" | "resolved";
 export type AuthorType = "contact" | "agent" | "system";
 /** `note` is internal to the team and is never sent to a contact. */
 export type MessageKind = "text" | "note" | "event";
-export type Channel = "web" | "ios" | "android";
+/** `email`: the conversation came in by email and team replies are sent as emails. */
+export type Channel = "web" | "ios" | "android" | "email";
 export type AgentRole = "owner" | "agent";
 export type ReplyTime = "minutes" | "hour" | "day";
 
@@ -58,7 +59,9 @@ export type SystemEvent =
    */
   | { type: "away"; agentName: null; message: LocalizedText; backAt: number | null }
   /** Team only: never shown to the contact. */
-  | { type: "priority"; agentName: string | null; priority: ConversationPriority };
+  | { type: "priority"; agentName: string | null; priority: ConversationPriority }
+  /** Team only: a reply could not be sent by email after every retry. */
+  | { type: "email_failed"; agentName: null; messageId: string; reason: string | null };
 
 export interface Message {
   id: string;
@@ -75,6 +78,8 @@ export interface Message {
   createdAt: number;
   /** Written by the AI assistant: always shown as such, with a way to reach a person. */
   ai?: boolean;
+  /** Team only: set on messages that travelled by email. */
+  email?: MessageEmail;
 }
 
 export interface MessagePreview {
@@ -155,6 +160,8 @@ export interface AgentConversation {
   tags: Tag[];
   priority: ConversationPriority;
   customFields: CustomFields;
+  /** Email conversations: the subject of the customer's first email. */
+  subject?: string | null;
 }
 
 export interface WidgetSettings {
@@ -589,4 +596,91 @@ export interface HelpCenterSettings {
   title: LocalizedText;
   /** Meta description and home page intro per language. */
   description?: LocalizedText;
+}
+
+// ---- Email channel ----
+
+/** How a message travelled by email (team only). */
+export interface MessageEmail {
+  direction: "inbound" | "outbound";
+  /** Outbound: `pending` until the provider accepts it, `failed` after the last retry. Null for inbound. */
+  status: "pending" | "sent" | "failed" | null;
+  /** Outbound: why the last attempt failed. */
+  error: string | null;
+  /**
+   * Inbound: true when the sender's domain vouched for it (DMARC, or DKIM aligned with the From domain).
+   * False means anyone could have written it: the From address is not proof. Null for outbound.
+   */
+  verified: boolean | null;
+}
+
+/** The whole inbound email behind a message ("Show full email"). Always plain text. */
+export interface EmailOriginal {
+  messageId: string;
+  from: { address: string; name: string | null };
+  to: string;
+  subject: string | null;
+  /** The Date header (ISO 8601 when it parses). */
+  sentAt: string | null;
+  text: string;
+  authentication: EmailAuthentication;
+  /** Attachments that were not imported (type, size or count limits). */
+  skippedAttachments: string[];
+}
+
+export type EmailAuthResult = "pass" | "fail" | "softfail" | "neutral" | "none" | "temperror" | "permerror" | "policy";
+
+/** What the receiving server found when it checked the sender (Authentication-Results). */
+export interface EmailAuthentication {
+  spf: EmailAuthResult | null;
+  dkim: EmailAuthResult | null;
+  dmarc: EmailAuthResult | null;
+  verified: boolean;
+}
+
+/** `auto`: Cloudflare Email Service when its binding is set up, otherwise Resend. */
+export type EmailProviderSetting = "auto" | "cloudflare" | "resend";
+export type EmailProvider = "cloudflare" | "resend";
+
+export interface EmailChannelSettings {
+  enabled: boolean;
+  /** Where customers write (support@example.com): EMAIL_INBOUND_ADDRESS, or set here. */
+  inboundAddress: string | null;
+  /** True when the address comes from EMAIL_INBOUND_ADDRESS (then it can't be changed here). */
+  inboundAddressFromEnv: boolean;
+  /** Replies come from "<teammate> via <fromName>" <fromAddress>. fromName defaults to the team name. */
+  fromName: string | null;
+  fromAddress: string | null;
+  provider: EmailProviderSetting;
+  status: EmailChannelStatus;
+}
+
+export interface EmailChannelStatus {
+  /** The provider replies go through right now, or null when none is configured. */
+  activeProvider: EmailProvider | null;
+  /** The `SEND_EMAIL` binding (Cloudflare Email Service) is configured. */
+  cloudflareReady: boolean;
+  /** RESEND_API_KEY is set. */
+  resendReady: boolean;
+  /** The address replies come from (fromAddress, else EMAIL_FROM, else the inbound address). */
+  effectiveFromAddress: string | null;
+  /** Customers' replies go to reply+<token>@<this domain>. */
+  replyDomain: string | null;
+  lastInboundAt: number | null;
+  lastOutboundAt: number | null;
+}
+
+export interface EmailChannelPatch {
+  enabled?: boolean;
+  inboundAddress?: string | null;
+  fromName?: string | null;
+  fromAddress?: string | null;
+  provider?: EmailProviderSetting;
+}
+
+export interface EmailTestResult {
+  ok: boolean;
+  provider: EmailProvider | null;
+  to: string;
+  error: string | null;
 }

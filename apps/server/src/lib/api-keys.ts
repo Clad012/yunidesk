@@ -119,6 +119,8 @@ const KEY_ROUTES: { method: string; path: RegExp; scope: ApiScope | null }[] = [
   { method: "GET", path: new RegExp(`^/conversations/${ID}$`), scope: "conversations:read" },
   { method: "GET", path: new RegExp(`^/conversations/${ID}/messages$`), scope: "conversations:read" },
   { method: "POST", path: new RegExp(`^/conversations/${ID}/messages$`), scope: "conversations:write" },
+  // Email channel: the full inbound email behind a message. (Settings → Email at /email is session only.)
+  { method: "GET", path: new RegExp(`^/conversations/${ID}/messages/${ID}/email$`), scope: "conversations:read" },
   { method: "PATCH", path: new RegExp(`^/conversations/${ID}$`), scope: "conversations:write" },
   { method: "POST", path: /^\/attachments$/, scope: "conversations:write" },
   // Tags, priority and custom fields (priority and values go through PATCH /conversations/:id).

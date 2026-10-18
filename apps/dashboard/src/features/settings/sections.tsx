@@ -2,6 +2,7 @@ import type { ComponentType } from "react";
 import { ApiKeysSection } from "./api-keys/api-keys-section";
 import { AssistantSection } from "./assistant/assistant-section";
 import { BusinessHoursSection } from "./business-hours/business-hours-section";
+import { EmailSection } from "./email/email-section";
 import { InstallSection } from "./install/install-section";
 import { MessengerSection } from "./messenger/messenger-section";
 import { PrivacySection } from "./privacy/privacy-section";
@@ -25,4 +26,5 @@ export const settingsComponents: Record<SettingsSection, ComponentType> = {
   profile: ProfileSection,
   "tags-fields": TagsFieldsSection,
   "business-hours": BusinessHoursSection,
+  email: EmailSection,
 };
