@@ -16,7 +16,7 @@ import {
   handOffToTeam,
 } from "../db/conversations";
 import type { AgentRow, ContactRow, ConversationRow, MessageRow } from "../db/rows";
-import { toAttachment, toContactConversations, toContactProfile, toMessages, toPublicAgent } from "../db/serialize";
+import { toAttachment, toContactConversations, toContactMessage, toContactProfile, toMessages, toPublicAgent } from "../db/serialize";
 import { badRequest, forbidden, notFound, unauthorized } from "../lib/errors";
 import { newId } from "../lib/ids";
 import { contactChannel, inboxHub } from "../lib/realtime";
@@ -224,7 +224,7 @@ contactRoutes.post("/conversations", async (c) => {
     runAssistantTurn(c.env, c.executionCtx as ExecutionContext, publicOrigin(c), result.conversation.id, clientIp(c)),
   );
   const [conversation] = await toContactConversations(c.env, [result.conversation]);
-  return c.json({ conversation, message: result.message }, 201);
+  return c.json({ conversation, message: toContactMessage(result.message) }, 201);
 });
 
 contactRoutes.get("/conversations/:id/messages", async (c) => {
@@ -247,7 +247,7 @@ contactRoutes.get("/conversations/:id/messages", async (c) => {
   const hasMore = results.length > PAGE_SIZE;
   const page = results.slice(0, PAGE_SIZE).reverse();
   return c.json({
-    items: await toMessages(c.env, publicOrigin(c), page),
+    items: (await toMessages(c.env, publicOrigin(c), page)).map(toContactMessage),
     nextCursor: hasMore ? (page[0]?.id ?? null) : null,
   });
 });
@@ -270,7 +270,7 @@ contactRoutes.post("/conversations/:id/messages", async (c) => {
     runAssistantTurn(c.env, c.executionCtx as ExecutionContext, publicOrigin(c), conversation.id, clientIp(c)),
   );
   const [updated] = await toContactConversations(c.env, [result.conversation]);
-  return c.json({ conversation: updated, message: result.message }, 201);
+  return c.json({ conversation: updated, message: toContactMessage(result.message) }, 201);
 });
 
 /** "Talk to a human": the AI assistant stops answering, the team takes it from here. */

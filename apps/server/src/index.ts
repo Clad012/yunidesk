@@ -12,6 +12,8 @@ import { agentRoutes } from "./routes/agent";
 import { contactRoutes } from "./routes/contact";
 import { fileRoutes } from "./routes/files";
 import { openApiDocument } from "./openapi";
+import { handleInboundEmail } from "./lib/email-channel/inbound";
+import { retryDueEmails } from "./lib/email-channel/outbound";
 
 export { ContactChannel } from "./durable/contact-channel";
 export { InboxHub } from "./durable/inbox-hub";
@@ -145,11 +147,17 @@ export default {
     if (controller.cron === "* * * * *") {
       const retried = await retryDueDeliveries(env);
       if (retried) console.log(`retried ${retried} webhook deliveries`);
+      const emails = await retryDueEmails(env, ctx, origin);
+      if (emails) console.log(`retried ${emails} email replies`);
     } else if (controller.cron === "*/5 * * * *") {
       const woken = await wakeSnoozed(env, ctx, origin);
       if (woken) console.log(`woke ${woken} snoozed conversations`);
     } else {
       console.log("retention", await runRetention(env));
     }
+  },
+  /** Cloudflare Email Routing: customers' emails to the support address and to reply+…@ addresses. */
+  async email(message, env, ctx) {
+    await handleInboundEmail(message, env, ctx);
   },
 } satisfies ExportedHandler<Env>;

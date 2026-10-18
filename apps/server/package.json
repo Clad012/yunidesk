@@ -17,6 +17,7 @@
     "ai": "7.0.55",
     "hono": "4.13.13",
     "jose": "6.2.12",
+    "postal-mime": "4.0.4",
     "yunidesk": "workspace:*",
     "zod": "4.6.5"
   },

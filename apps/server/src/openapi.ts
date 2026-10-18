@@ -151,6 +151,32 @@ export const openApiDocument = {
           attachments: { type: "array", items: ref("Attachment") },
           clientId: nullable({ type: "string" }),
           createdAt: ms,
+          email: {
+            type: "object",
+            description: "Set on messages that travelled by email (channel email)",
+            properties: {
+              direction: { enum: ["inbound", "outbound"] },
+              status: nullable({ enum: ["pending", "sent", "failed"] }),
+              error: nullable({ type: "string" }),
+              verified: nullable({ type: "boolean", description: "Inbound: DMARC or DKIM aligned with the From domain passed" }),
+            },
+          },
+        },
+      },
+      EmailOriginal: {
+        type: "object",
+        properties: {
+          messageId: id("msg"),
+          from: { type: "object", properties: { address: { type: "string" }, name: nullable({ type: "string" }) } },
+          to: { type: "string" },
+          subject: nullable({ type: "string" }),
+          sentAt: nullable({ type: "string" }),
+          text: { type: "string", description: "The whole email as plain text (HTML-only emails are converted)" },
+          authentication: {
+            type: "object",
+            properties: { spf: nullable({ type: "string" }), dkim: nullable({ type: "string" }), dmarc: nullable({ type: "string" }), verified: { type: "boolean" } },
+          },
+          skippedAttachments: { type: "array", items: { type: "string" } },
         },
       },
       Conversation: {
@@ -158,7 +184,8 @@ export const openApiDocument = {
         properties: {
           id: id("cnv"),
           status: { enum: ["open", "snoozed", "resolved"] },
-          channel: { type: "string" },
+          channel: { enum: ["web", "ios", "android", "email"] },
+          subject: nullable({ type: "string", description: "Email conversations only" }),
           contact: ref("Contact"),
           assignee: nullable(ref("PublicAgent")),
           createdAt: ms,
@@ -308,7 +335,7 @@ export const openApiDocument = {
         parameters: [pathId("conversationId", "cnv"), { name: "before", in: "query", schema: id("msg") }],
         responses: { "200": ok(page("Message")), ...errors },
       }),
-      post: op("sendMessage", "conversations:write", "Reply to the customer (text) or add an internal note", {
+      post: op("sendMessage", "conversations:write", "Reply to the customer (text) or add an internal note. In email conversations a reply is sent as an email", {
         parameters: [pathId("conversationId", "cnv")],
         requestBody: {
           content: json({
@@ -326,6 +353,12 @@ export const openApiDocument = {
           "201": ok({ type: "object", properties: { conversation: ref("Conversation"), message: ref("Message") } }, "Created"),
           ...errors,
         },
+      }),
+    },
+    "/conversations/{conversationId}/messages/{messageId}/email": {
+      get: op("getMessageEmail", "conversations:read", "The whole inbound email behind a message (the message body keeps only the new part)", {
+        parameters: [pathId("conversationId", "cnv"), pathId("messageId", "msg")],
+        responses: { "200": ok(ref("EmailOriginal")), ...errors },
       }),
     },
     "/attachments": {
