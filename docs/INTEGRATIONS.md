@@ -24,8 +24,8 @@ Authorization: Bearer ydk_3f9k2m…
 
 | Scope | Allows |
 |---|---|
-| `conversations:read` | `GET /key`, `/teammates`, `/conversations`, `/conversations/counts`, `/conversations/:id`, `/conversations/:id/messages`, `/tags`, `/conversation-fields` |
-| `conversations:write` | `POST /conversations/:id/messages` (reply or note), `PATCH /conversations/:id` (status, snooze, assignee, priority, custom field values), `POST /conversations/:id/tags`, `DELETE /conversations/:id/tags/:tagId`, `POST /tags`, `POST /attachments` |
+| `conversations:read` | `GET /key`, `/teammates`, `/conversations`, `/conversations/counts`, `/conversations/:id`, `/conversations/:id/messages`, `/tags`, `/conversation-fields`, `/teams` |
+| `conversations:write` | `POST /conversations/:id/messages` (reply or note), `PATCH /conversations/:id` (status, snooze, assignee, team, priority, custom field values), `POST /conversations/:id/tags`, `DELETE /conversations/:id/tags/:tagId`, `POST /tags`, `POST /attachments` |
 | `contacts:read` | `GET /contacts`, `/contacts/:id` |
 | `webhooks:write` | `/webhook-endpoints` (only the endpoints this key created) |
 
@@ -34,6 +34,8 @@ Authorization: Bearer ydk_3f9k2m…
 All paths are under `/api/agent`. Errors look like `{ "error": { "code", "message" } }`.
 
 **Tags, priority and custom fields** are team-only: customers never see them, in the messenger or the app SDK. Tag a conversation by name in one call (`POST /conversations/:id/tags { "name": "billing" }` creates the tag when missing), filter with `GET /conversations?tag=&priority=&sort=priority`, and set values with `PATCH /conversations/:id { "priority": "urgent", "customFields": { "plan": "pro", "order_id": null } }` (merged; `null` clears; unknown keys and values that don't fit the field are refused). Renaming or deleting tags and defining fields are owner settings, never available to a key. `conversation.created` and `conversation.updated` webhooks carry `priority`, `tags` (names) and `customFields`.
+
+**Teams** are team-only too. `GET /teams` lists them with their members (each `available` or `away`, with their open load) and open counts; `GET /conversations?team=<id>` filters; `PATCH /conversations/:id { "teamId": "tem_…" }` moves a conversation (null takes it out; the assignee stays). Creating teams, membership, the assignment rules, limits and availability are dashboard settings, never available to a key. Rules run when a conversation is created (unless the AI assistant takes it) and when the assistant hands off, so a tag you add while the assistant answers can route the conversation; a tag added after `conversation.created` on a conversation going straight to people comes too late for the rules. Conversation webhooks carry `teamId` and `team`.
 
 ### Typed client
 
@@ -74,7 +76,7 @@ and these headers: `X-Yunidesk-Event`, `X-Yunidesk-Event-Id`, `X-Yunidesk-Delive
 |---|---|
 | `conversation.created` | A customer starts a conversation |
 | `message.created` | A message visible to the customer (not notes). `data.actor` says who wrote it (`contact`, `agent`, `bot`, `system`). Ignore your own bot's messages |
-| `conversation.updated` | Status or assignee changed |
+| `conversation.updated` | Status, assignee, team, priority, tags or custom fields changed |
 | `conversation.unread_reply` | A team reply is still unread after 2 minutes (send your push notification here) |
 | `conversation.rated` | The customer rated a resolved conversation |
 | `ping` | "Send test event" |

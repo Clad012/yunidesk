@@ -17,9 +17,10 @@ import type {
   CustomFieldValue,
   Message,
   Page,
-  PublicAgent,
   TagColor,
   TagWithUsage,
+  Team,
+  Teammate,
   WebhookDelivery,
   WebhookEndpoint,
   WebhookEndpointWithSecret,
@@ -59,6 +60,8 @@ export interface ConversationPatch {
   priority?: ConversationPriority;
   /** Merged into the stored values; null clears one. Keys come from `conversationFields.list()`. */
   customFields?: Record<string, CustomFieldValue | null>;
+  /** A team id from `teams.list()`, or null to take it out of its team. The assignee stays. */
+  teamId?: string | null;
 }
 
 export interface WebhookEndpointInput {
@@ -120,7 +123,7 @@ export function createYunideskApi(options: YunideskApiOptions) {
   return {
     /** The key itself, its bot and the workspace name. Use it to check a key when connecting. */
     key: () => call<{ apiKey: ApiKey; workspace: { name: string } }>("GET", "/key"),
-    teammates: () => call<{ items: PublicAgent[] }>("GET", "/teammates"),
+    teammates: () => call<{ items: Teammate[] }>("GET", "/teammates"),
     /** Every event this server sends, with names in en/fr and the fields each carries. */
     events: { list: () => call<{ items: WebhookEventDescriptor[] }>("GET", "/events") },
 
@@ -133,6 +136,8 @@ export function createYunideskApi(options: YunideskApiOptions) {
           contactId?: string;
           /** A tag id: only conversations carrying it. */
           tag?: string;
+          /** A team id: only conversations in that team. */
+          team?: string;
           priority?: ConversationPriority;
           /** "priority": urgent first, newest first within each priority. */
           sort?: "priority";
@@ -161,6 +166,11 @@ export function createYunideskApi(options: YunideskApiOptions) {
     tags: {
       list: () => call<{ items: TagWithUsage[] }>("GET", "/tags"),
       create: (input: { name: string; color?: TagColor }) => call<TagWithUsage>("POST", "/tags", input),
+    },
+
+    /** Teams with their members and open counts (scope conversations:read). Move a conversation with `conversations.update({ teamId })`. */
+    teams: {
+      list: () => call<{ items: Team[] }>("GET", "/teams"),
     },
 
     /** Custom fields the owners defined (values are set with `conversations.update`). */
