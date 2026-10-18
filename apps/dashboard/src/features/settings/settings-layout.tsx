@@ -1,5 +1,5 @@
 import { Link, Outlet } from "@tanstack/react-router";
-import { BotIcon, BracesIcon, CodeIcon, KeyRoundIcon, MessageCircleIcon, MessageSquareTextIcon, ShieldCheckIcon, UserRoundIcon, UsersIcon, type LucideIcon } from "lucide-react";
+import { BotIcon, BracesIcon, CodeIcon, KeyRoundIcon, MailIcon, MessageCircleIcon, MessageSquareTextIcon, ShieldCheckIcon, UserRoundIcon, UsersIcon, type LucideIcon } from "lucide-react";
 import { copy } from "@/lib/copy";
 import type { SettingsSection } from "./section-names";
 
@@ -10,6 +10,7 @@ const GROUPS: { title: string; items: { section: SettingsSection; label: string;
       { section: "assistant", label: copy.settings.sections.assistant, icon: BotIcon },
       { section: "messenger", label: copy.settings.sections.messenger, icon: MessageCircleIcon },
       { section: "install", label: copy.settings.sections.install, icon: CodeIcon },
+      { section: "email", label: copy.settings.sections.email, icon: MailIcon },
       { section: "team", label: copy.settings.sections.team, icon: UsersIcon },
       { section: "saved-replies", label: copy.settings.sections.savedReplies, icon: MessageSquareTextIcon },
       { section: "webhooks", label: copy.settings.sections.webhooks, icon: BracesIcon },

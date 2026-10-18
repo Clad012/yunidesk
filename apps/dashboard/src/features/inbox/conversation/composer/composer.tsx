@@ -6,6 +6,7 @@ import { copy, fmt } from "@/lib/copy";
 import { cn } from "@/lib/utils";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { contactLabel } from "../../lib/labels";
+import { EmailReplyHint } from "../email/email-reply-hint";
 import { AttachmentTray } from "./attachment-tray";
 import { composerBus, drafts } from "./composer-bus";
 import { ComposerToolbar } from "./composer-toolbar";
@@ -110,6 +111,8 @@ export function Composer({ conversation, send }: ComposerProps) {
               </Tabs>
               {conversation.status === "resolved" && mode === "text" ? (
                 <span className="truncate text-xs text-muted-foreground">{copy.composer.resolvedHint}</span>
+              ) : mode === "text" ? (
+                <EmailReplyHint conversation={conversation} />
               ) : null}
             </div>
             <AttachmentTray uploads={uploads.uploads} onRemove={uploads.remove} onRetry={uploads.retry} />

@@ -16,6 +16,10 @@ import type {
   Contact,
   CreatedApiKey,
   ConversationStatus,
+  EmailChannelPatch,
+  EmailChannelSettings,
+  EmailOriginal,
+  EmailTestResult,
   InboxCounts,
   Invite,
   KnowledgeInput,
@@ -94,6 +98,8 @@ export const queryKeys = {
   knowledgeLists: ["assistant", "knowledge"] as const,
   knowledge: (q: string) => ["assistant", "knowledge", q] as const,
   assistantTools: ["assistant", "tools"] as const,
+  emailChannel: ["email-channel"] as const,
+  messageEmail: (messageId: string) => ["message-email", messageId] as const,
 };
 
 const enc = encodeURIComponent;
@@ -195,4 +201,10 @@ export const endpoints = {
     api<AssistantTool>(`/api/agent/assistant/tools/${enc(id)}`, { method: "PATCH", body: { ...body } }),
   deleteAssistantTool: (id: string) => api<{ ok: true }>(`/api/agent/assistant/tools/${enc(id)}`, { method: "DELETE" }),
   rollAssistantToolSecret: () => api<{ secret: string }>("/api/agent/assistant/tools/roll-secret", { method: "POST" }),
+
+  emailChannel: () => api<EmailChannelSettings>("/api/agent/email"),
+  patchEmailChannel: (body: EmailChannelPatch) => api<EmailChannelSettings>("/api/agent/email", { method: "PATCH", body: { ...body } }),
+  testEmail: () => api<EmailTestResult>("/api/agent/email/test", { method: "POST" }),
+  messageEmail: (conversationId: string, messageId: string) =>
+    api<EmailOriginal>(`/api/agent/conversations/${enc(conversationId)}/messages/${enc(messageId)}/email`),
 };
