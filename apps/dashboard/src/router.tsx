@@ -15,6 +15,7 @@ import { ConversationEmpty } from "@/features/inbox/conversation/conversation-em
 import { ConversationRoute } from "@/features/inbox/conversation/conversation-route";
 import { SettingsLayout } from "@/features/settings/settings-layout";
 import { SETTINGS_SECTIONS, type SettingsSection } from "@/features/settings/section-names";
+import { parseReportSearch } from "@/features/reports/lib/report-search";
 
 const rootRoute = createRootRouteWithContext<{ queryClient: QueryClient }>()({ component: RootLayout });
 
@@ -103,6 +104,13 @@ const contactsRoute = createRoute({ getParentRoute: () => appRoute, path: "/cont
 const contactsIndexRoute = createRoute({ getParentRoute: () => contactsRoute, path: "/", component: lazyRouteComponent(() => import("@/features/contacts/contacts-page"), "ContactsPage") });
 const contactRoute = createRoute({ getParentRoute: () => contactsRoute, path: "$contactId", component: lazyRouteComponent(() => import("@/features/contacts/contact-page"), "ContactPage") });
 
+const reportsRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/reports",
+  validateSearch: parseReportSearch,
+  component: lazyRouteComponent(() => import("@/features/reports/reports-page"), "ReportsPage"),
+});
+
 const settingsRoute = createRoute({ getParentRoute: () => appRoute, path: "/settings", component: SettingsLayout });
 const settingsIndexRoute = createRoute({
   getParentRoute: () => settingsRoute,
@@ -132,6 +140,7 @@ const routeTree = rootRoute.addChildren([
     inboxIndexRoute,
     inboxRoute.addChildren([inboxEmptyRoute, conversationRoute]),
     contactsRoute.addChildren([contactsIndexRoute, contactRoute]),
+    reportsRoute,
     settingsRoute.addChildren([settingsIndexRoute, settingsSectionRoute]),
   ]),
 ]);

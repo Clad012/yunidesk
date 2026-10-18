@@ -143,3 +143,30 @@
   scrollbar-width: thin;
   scrollbar-color: color-mix(in oklab, var(--foreground) 18%, transparent) transparent;
 }
+
+/* Reports charts. Series and heat steps follow the dataviz reference palette, checked with its
+   validator (colour-blind separation and 3:1 contrast) on the light and the dark card. */
+:root {
+  --viz-created: #2a78d6;
+  --viz-resolved: #eb6834;
+  --viz-grid: oklch(0.92 0.004 286);
+  --viz-axis: oklch(0.82 0.006 286);
+  --viz-heat-0: oklch(0.965 0.003 286);
+  --viz-heat-1: #cde2fb;
+  --viz-heat-2: #9ec5f4;
+  --viz-heat-3: #5598e7;
+  --viz-heat-4: #256abf;
+  --viz-heat-5: #104281;
+}
+.dark {
+  --viz-created: #3987e5;
+  --viz-resolved: #d95926;
+  --viz-grid: oklch(1 0 0 / 8%);
+  --viz-axis: oklch(1 0 0 / 18%);
+  --viz-heat-0: oklch(0.25 0.007 286);
+  --viz-heat-1: #104281;
+  --viz-heat-2: #1c5cab;
+  --viz-heat-3: #2a78d6;
+  --viz-heat-4: #5598e7;
+  --viz-heat-5: #9ec5f4;
+}

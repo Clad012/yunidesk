@@ -27,6 +27,11 @@ import type {
   Message,
   Page,
   PublicAgent,
+  ReportQuery,
+  ReportSummary,
+  ReportTagRow,
+  ReportTeammateRow,
+  ReportVolume,
   TagColor,
   TagWithUsage,
   WebhookDelivery,
@@ -121,7 +126,17 @@ export const queryKeys = {
   assistantTools: ["assistant", "tools"] as const,
   tags: ["tags"] as const,
   conversationFields: ["conversation-fields"] as const,
+  report: (kind: "summary" | "volume" | "teammates" | "tags", query: ReportQuery) => ["reports", kind, query] as const,
 };
+
+function reportSearch(query: ReportQuery, extra: Record<string, string> = {}): string {
+  const search = new URLSearchParams({ from: query.from, to: query.to, ...extra });
+  if (query.tz) search.set("tz", query.tz);
+  if (query.channel) search.set("channel", query.channel);
+  if (query.tagId) search.set("tagId", query.tagId);
+  if (query.assigneeId) search.set("assigneeId", query.assigneeId);
+  return search.toString();
+}
 
 const enc = encodeURIComponent;
 
@@ -242,6 +257,13 @@ export const endpoints = {
   deleteConversationField: (id: string) => api<{ ok: true }>(`/api/agent/conversation-fields/${enc(id)}`, { method: "DELETE" }),
   reorderConversationFields: (ids: string[]) =>
     api<{ items: ConversationField[] }>("/api/agent/conversation-fields/reorder", { body: { ids } }),
+
+  reportSummary: (query: ReportQuery) => api<ReportSummary>(`/api/agent/reports/summary?${reportSearch(query)}`),
+  reportVolume: (query: ReportQuery) => api<ReportVolume>(`/api/agent/reports/volume?${reportSearch(query)}`),
+  reportTeammates: (query: ReportQuery) => api<{ items: ReportTeammateRow[] }>(`/api/agent/reports/teammates?${reportSearch(query)}`),
+  reportTags: (query: ReportQuery) => api<{ items: ReportTagRow[] }>(`/api/agent/reports/tags?${reportSearch(query)}`),
+  /** A same-origin link the browser downloads with the session cookie. */
+  reportCsvUrl: (table: "teammates" | "tags", query: ReportQuery) => `/api/agent/reports/${table}?${reportSearch(query, { format: "csv" })}`,
 
   rollAssistantToolSecret: () => api<{ secret: string }>("/api/agent/assistant/tools/roll-secret", { method: "POST" }),
 };
