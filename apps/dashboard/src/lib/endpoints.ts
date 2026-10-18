@@ -29,6 +29,9 @@ import type {
   PublicAgent,
   TagColor,
   TagWithUsage,
+  PushPreferences,
+  PushSettings,
+  PushSubscriptionInput,
   WebhookDelivery,
   WebhookEndpoint,
   WebhookEndpointWithSecret,
@@ -121,6 +124,8 @@ export const queryKeys = {
   assistantTools: ["assistant", "tools"] as const,
   tags: ["tags"] as const,
   conversationFields: ["conversation-fields"] as const,
+  pushSettings: ["push", "settings"] as const,
+  pushPublicKey: ["push", "public-key"] as const,
 };
 
 const enc = encodeURIComponent;
@@ -244,4 +249,12 @@ export const endpoints = {
     api<{ items: ConversationField[] }>("/api/agent/conversation-fields/reorder", { body: { ids } }),
 
   rollAssistantToolSecret: () => api<{ secret: string }>("/api/agent/assistant/tools/roll-secret", { method: "POST" }),
+
+  pushPublicKey: () => api<{ publicKey: string }>("/api/agent/push/public-key"),
+  pushSettings: () => api<PushSettings>("/api/agent/push/preferences"),
+  savePushPreferences: (body: Partial<PushPreferences>) => api<PushSettings>("/api/agent/push/preferences", { method: "PUT", body: { ...body } }),
+  pushSubscribe: (body: PushSubscriptionInput) => api<PushSettings>("/api/agent/push/subscriptions", { body: { ...body } }),
+  pushUnsubscribe: (endpoint: string) => api<PushSettings>("/api/agent/push/subscriptions", { method: "DELETE", body: { endpoint } }),
+  pushTest: (endpoint: string) =>
+    api<{ outcome: "delivered" | "gone" | "failed"; status: number | null }>("/api/agent/push/test", { body: { endpoint } }),
 };

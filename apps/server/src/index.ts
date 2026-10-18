@@ -117,6 +117,9 @@ const DASHBOARD_CSP = [
   "connect-src 'self'",
   "font-src 'self' data:",
   "frame-src 'self'",
+  // The service worker (/sw.js) shows push notifications; the manifest makes the dashboard installable.
+  "worker-src 'self'",
+  "manifest-src 'self'",
   "object-src 'none'",
   "base-uri 'none'",
   "form-action 'self'",
@@ -129,12 +132,25 @@ app.all("*", async (c) => {
   const headers = new Headers(response.headers);
   headers.set("x-content-type-options", "nosniff");
   headers.set("referrer-policy", "strict-origin-when-cross-origin");
-  if ((headers.get("content-type") ?? "").includes("text/html")) {
+  const isHtml = (headers.get("content-type") ?? "").includes("text/html");
+  if (isHtml) {
     headers.set("content-security-policy", DASHBOARD_CSP);
     headers.set("x-frame-options", "DENY");
     headers.set("cache-control", "no-cache");
   }
-  if (new URL(c.req.url).pathname === "/widget.js") headers.set("cache-control", "public, max-age=300");
+  const pathname = new URL(c.req.url).pathname;
+  if (pathname === "/widget.js") headers.set("cache-control", "public, max-age=300");
+  if (pathname === "/sw.js" && response.ok && !isHtml) {
+    // Always revalidated, so a new worker reaches every browser on the next visit. Scope: the whole dashboard.
+    headers.set("content-type", "text/javascript; charset=utf-8");
+    headers.set("cache-control", "no-cache");
+    headers.set("service-worker-allowed", "/");
+    headers.set("content-security-policy", "default-src 'self'; script-src 'self'; connect-src 'self'; object-src 'none'");
+  }
+  if (pathname === "/manifest.webmanifest" && response.ok && !isHtml) {
+    headers.set("content-type", "application/manifest+json; charset=utf-8");
+    headers.set("cache-control", "public, max-age=3600");
+  }
   return new Response(response.body, { status: response.status, headers });
 });
 

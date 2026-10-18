@@ -13,7 +13,7 @@ packages/react-native  (npm: yunidesk-react-native) Native messenger for Expo / 
 
 ## Data (all pinned to the EU)
 
-- **D1** `yunidesk` (`--jurisdiction eu`): agents, sessions, invites, contacts, conversations, messages (+ FTS5), attachments, settings, saved replies, tags (`tags`, `conversation_tags`), custom field definitions (`conversation_fields`; values in `conversations.custom_fields`). Schema: `apps/server/migrations`.
+- **D1** `yunidesk` (`--jurisdiction eu`): agents, sessions, invites, contacts, conversations, messages (+ FTS5), attachments, settings, saved replies, tags (`tags`, `conversation_tags`), custom field definitions (`conversation_fields`; values in `conversations.custom_fields`), push subscriptions. Schema: `apps/server/migrations`.
 - **R2** `yunidesk-files` (`jurisdiction: eu`): attachments (private, served through signed links) and team avatars (public).
 - **Durable Objects** (`DATA_JURISDICTION=eu`): `InboxHub` (one, the team's live room) and `ContactChannel` (one per contact, all their tabs/devices). Hibernatable websockets.
 
@@ -92,11 +92,26 @@ Shapes are in `packages/protocol/src/types.ts`. Errors: `{ error: { code, messag
 | GET/POST | `/canned-responses` | `{ shortcut, title, body }` |
 | PUT/DELETE | `/canned-responses/:id` | |
 | GET | `/ws` | websocket → `AgentServerEvent` frames |
+| GET | `/push/public-key` | `{ publicKey }` (VAPID, base64url); created on first call |
+| GET/PUT | `/push/preferences` | `PushSettings` / partial `PushPreferences` (mine) |
+| POST | `/push/subscriptions` | `PushSubscriptionInput` (this device; idempotent, max 10 devices each) |
+| DELETE | `/push/subscriptions` | `{ endpoint }` |
+| POST | `/push/test` | `{ endpoint }` → `{ outcome, status }` (sends to that device of mine) |
 
-Websocket client frames: `{ type: "typing", conversationId, isTyping }` and `{ type: "ping" }` (answered with `{"type":"pong"}`; send every ~25 s).
+Websocket client frames: `{ type: "typing", conversationId, isTyping }`, `{ type: "visibility", visible }` (is the tab on screen; sent on connect and on every change) and `{ type: "ping" }` (answered with `{"type":"pong"}`; send every ~25 s).
 
 ### Files
 `GET /api/files/:id?exp&sig` — signed, expiring links (12 h). Images (png/jpeg/gif/webp) inline, everything else as a download; served with a sandbox CSP and `nosniff`. Uploads are checked against magic bytes.
+
+## Push notifications (teammates)
+
+Web Push straight from the Worker, no third-party service and no configuration (`apps/server/src/lib/web-push.ts`, `lib/push/`):
+- **Keys.** On first need the server generates an ECDSA P-256 VAPID key pair (WebCrypto). The public key and the private scalar, sealed with the secret box (`SESSION_SECRET`, bound to the public key), live in `settings` under `push.vapid`. If `SESSION_SECRET` changes the old key can't be opened: a new one is made, all subscriptions are dropped, and dashboards resubscribe on their next load.
+- **Sending.** Payloads are encrypted per RFC 8291 (`aes128gcm`, ECDH P-256 + HKDF; checked against the RFC's test vector) and signed per RFC 8292 (`Authorization: vapid t=<ES256 JWT>, k=<public key>`), with `TTL` 24 h, `Urgency: high` and `Topic` = conversation id. Sent from `ctx.waitUntil`, never blocking the request; redirects are not followed. 404/410 delete the subscription; anything else that isn't 2xx counts a failure, and 5 in a row delete it.
+- **Subscriptions** (`push_subscriptions`): one row per device, unique endpoint, owned by the signed-in teammate (session only; API keys get 403). Endpoints must be `https` on a public name (no IPs, ports, credentials, local/private names, nor this server).
+- **Events** (`agents.push_preferences`, all on by default): a new unassigned conversation (skipped while the AI assistant will answer it), a customer message in a conversation assigned to me, a conversation assigned to me, and an assistant handoff (to the assignee, else everyone). Never to the person who acted, never to bots or disabled teammates, and never to a teammate who has a dashboard tab open and visible (`InboxHub.visibleAgentIds()`, fed by the `visibility` frames). Notes never trigger a push.
+- **Payload**: `{ title, body, tag, url }` — the contact's name (or email) and a one-line preview of at most 120 characters; `tag` is the conversation id so updates replace each other.
+- **Dashboard.** Installable (`/manifest.webmanifest`, `display: standalone`). `/sw.js` (scope `/`, `no-cache`) only shows notifications and, on click, focuses an open dashboard tab and opens the conversation in it (or opens a new window). It caches nothing. Permission is asked only when the teammate clicks "Turn on" in Settings → Profile → Notifications; iPhone/iPad need the dashboard added to the Home Screen first. Signing out turns push off on that device.
 
 ## Widget embedding
 

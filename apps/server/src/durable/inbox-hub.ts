@@ -5,6 +5,8 @@ import { contactChannel } from "../lib/realtime";
 
 interface SocketInfo {
   agent: PublicAgent;
+  /** The tab reports whether it is on screen; until it does, it counts as visible. */
+  visible?: boolean;
 }
 
 const ONLINE_PREFIX = "online:";
@@ -81,6 +83,17 @@ export class InboxHub extends DurableObject<Env> {
     return [...ids];
   }
 
+  /** Teammates with a dashboard tab open and on screen: push notifications skip them. */
+  async visibleAgentIds(): Promise<string[]> {
+    const ids = new Set<string>();
+    for (const ws of this.ctx.getWebSockets()) {
+      if (ws.readyState !== 1) continue;
+      const info = ws.deserializeAttachment() as SocketInfo | null;
+      if (info && info.visible !== false) ids.add(info.agent.id);
+    }
+    return [...ids];
+  }
+
   async setContactOnline(contactId: string, online: boolean): Promise<void> {
     if (online) await this.ctx.storage.put(ONLINE_PREFIX + contactId, true);
     else await this.ctx.storage.delete(ONLINE_PREFIX + contactId);
@@ -109,9 +122,13 @@ export class InboxHub extends DurableObject<Env> {
     } catch {
       return;
     }
-    if (event.type !== "typing" || typeof event.conversationId !== "string") return;
     const info = ws.deserializeAttachment() as SocketInfo | null;
     if (!info) return;
+    if (event.type === "visibility") {
+      ws.serializeAttachment({ ...info, visible: event.visible === true } satisfies SocketInfo);
+      return;
+    }
+    if (event.type !== "typing" || typeof event.conversationId !== "string") return;
     const isTyping = Boolean(event.isTyping);
 
     // Teammates see who is replying, so two people don't answer at once.

@@ -30,6 +30,8 @@ In `wrangler.jsonc` → `vars`:
 - `DATA_JURISDICTION`: `eu` when the resources were created with `--jurisdiction eu`.
 - `PUBLIC_URL`: e.g. `https://support.example.com`, once the custom domain is set.
 
+**Push notifications for your team** need no setup: the server makes its own VAPID key pair the first time someone turns them on (Settings → Profile → Notifications) and keeps the private key encrypted with `SESSION_SECRET`. Changing `SESSION_SECRET` later makes a new key; every device then has to turn notifications on again (the dashboard does it by itself on the next visit). On iPhone and iPad, teammates first add the dashboard to the Home Screen.
+
 Keeping your real ids and domain out of git: copy `wrangler.jsonc` to `wrangler.production.jsonc` (gitignored), fill it in, and deploy with `pnpm run deploy:production`.
 
 ## 3. Deploy

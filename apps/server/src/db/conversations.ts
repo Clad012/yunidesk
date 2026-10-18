@@ -11,6 +11,7 @@ import {
 import type { Env } from "../env";
 import { badRequest, notFound } from "../lib/errors";
 import { newId } from "../lib/ids";
+import { sendPush } from "../lib/push/notify";
 import { contactChannel, notifyAgents, notifyContact } from "../lib/realtime";
 import { sendWebhook } from "../lib/webhooks";
 import { getSettings } from "../lib/settings";
@@ -155,6 +156,7 @@ export async function createConversation(
     .run();
   const conversation = await getConversation(env, id);
   const result = await insertMessage(env, ctx, origin, conversation, author, "text", draft, attachments);
+  ctx.waitUntil(sendPush(env, origin, { kind: "newConversation", conversation: result.conversation, preview: draft.body }));
   ctx.waitUntil(
     contactSummary(env, contactId).then((contact) =>
       sendWebhook(env, "conversation.created", {
@@ -193,7 +195,11 @@ export async function postMessage(
     }
   }
   const attachments = await validateDraft(env, author, draft);
-  return insertMessage(env, ctx, origin, conversation, author, kind, draft, attachments);
+  const result = await insertMessage(env, ctx, origin, conversation, author, kind, draft, attachments);
+  if (author.type === "contact" && result.conversation.assignee_id) {
+    ctx.waitUntil(sendPush(env, origin, { kind: "assignedMessage", conversation: result.conversation, preview: draft.body }));
+  }
+  return result;
 }
 
 async function insertMessage(
@@ -453,6 +459,9 @@ export async function updateConversation(
       event,
     ));
   }
+  if (current.assignee_id && current.assignee_id !== conversation.assignee_id) {
+    ctx.waitUntil(sendPush(env, origin, { kind: "assigned", conversation: current, actor: { id: agent.id, name: agent.name } }));
+  }
   if (events.length === 0) {
     // Only custom fields changed: no timeline event carried the new state to the dashboards.
     const [agentConversation] = await toAgentConversations(env, [current]);
@@ -593,6 +602,8 @@ export async function handOffToTeam(
     { body: "", attachmentIds: [], clientId: null },
     [],
     away?.backAt ? { type: "handed_off", agentName: null, backAt: away.backAt } : { type: "handed_off", agentName: null },
+  );
+  ctx.waitUntil(sendPush(env, origin, { kind: "handoff", conversation: updated }));
   );
   ctx.waitUntil(sendConversationUpdated(env, updated, { type: "contact", id: updated.contact_id }));
   return updated;
