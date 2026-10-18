@@ -604,7 +604,6 @@ export async function handOffToTeam(
     away?.backAt ? { type: "handed_off", agentName: null, backAt: away.backAt } : { type: "handed_off", agentName: null },
   );
   ctx.waitUntil(sendPush(env, origin, { kind: "handoff", conversation: updated }));
-  );
   ctx.waitUntil(sendConversationUpdated(env, updated, { type: "contact", id: updated.contact_id }));
   return updated;
 }
