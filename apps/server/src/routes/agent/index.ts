@@ -12,6 +12,7 @@ import { apiKeyRoutes } from "./api-keys";
 import { assistantRoutes } from "./assistant";
 import { contactAdminRoutes } from "./contacts";
 import { attachmentRoutes, inboxRoutes } from "./inbox";
+import { pushRoutes } from "./push";
 import { teamRoutes } from "./team";
 import { webhookEndpointRoutes } from "./webhook-endpoints";
 
@@ -89,4 +90,5 @@ agentRoutes.route("/contacts", contactAdminRoutes);
 agentRoutes.route("/api-keys", apiKeyRoutes);
 agentRoutes.route("/assistant", assistantRoutes);
 agentRoutes.route("/webhook-endpoints", webhookEndpointRoutes);
+agentRoutes.route("/push", pushRoutes);
 agentRoutes.route("/", teamRoutes);

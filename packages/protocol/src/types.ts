@@ -225,6 +225,8 @@ export type AgentServerEvent =
 export type ClientEvent =
   /** `internal` (team only): a teammate writing a note; never shown to the contact. */
   | { type: "typing"; conversationId: string; isTyping: boolean; internal?: boolean }
+  /** Team only: whether this dashboard tab is on screen. Push notifications skip teammates who are looking. */
+  | { type: "visibility"; visible: boolean }
   | { type: "ping" };
 
 // ---- API payloads ----
@@ -420,4 +422,42 @@ export interface AssistantUsage {
   replies: number;
   costUsd: number;
   budgetUsd: number;
+}
+
+// ---- Push notifications (teammates, Web Push) ----
+
+/** What a teammate wants pushed to their devices. Stored per teammate, applies to all their devices. */
+export interface PushPreferences {
+  /** A customer starts a conversation nobody is assigned to (and the AI assistant isn't answering). */
+  newConversation: boolean;
+  /** A customer writes in a conversation assigned to me. */
+  assignedMessage: boolean;
+  /** Someone assigns a conversation to me. */
+  assigned: boolean;
+  /** A customer asks for a person (the AI assistant hands the conversation over). */
+  handoff: boolean;
+}
+
+/** `PushSubscription.toJSON()` from the browser, as sent to `POST /api/agent/push/subscriptions`. */
+export interface PushSubscriptionInput {
+  endpoint: string;
+  keys: { p256dh: string; auth: string };
+  /** The subscription this one replaces (the browser rotated it). */
+  replaces?: string;
+}
+
+/** `GET /api/agent/push/preferences`: my preferences and how many of my devices receive pushes. */
+export interface PushSettings {
+  preferences: PushPreferences;
+  devices: number;
+}
+
+/** What the service worker receives in a push message. */
+export interface PushPayload {
+  title: string;
+  body: string;
+  /** Notifications with the same tag replace each other (one per conversation). */
+  tag: string;
+  /** Dashboard path to open on click. */
+  url: string;
 }
