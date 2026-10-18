@@ -6,6 +6,7 @@ export interface StoredSettings extends WidgetSettings {
   webhookUrl: string | null;
   webhookSecret: string | null;
   retentionDays: number;
+  auditRetentionDays: number;
 }
 
 export const DEFAULT_SETTINGS: StoredSettings = {
@@ -21,6 +22,7 @@ export const DEFAULT_SETTINGS: StoredSettings = {
   webhookUrl: null,
   webhookSecret: null,
   retentionDays: 730,
+  auditRetentionDays: 365,
 };
 
 const KEY = "workspace";

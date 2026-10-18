@@ -14,7 +14,8 @@ import {
 } from "../../lib/assistant/settings";
 import { TOOL_NAME, type AssistantToolRow } from "../../lib/assistant/tools";
 import { recordUsage, spentToday, usageToday } from "../../lib/assistant/usage";
-import { requireOwner } from "../../lib/agent-session";
+import { audit, changedKeys } from "../../lib/audit";
+import { requirePermission } from "../../lib/permissions";
 import { badRequest, conflict, notFound } from "../../lib/errors";
 import { newId } from "../../lib/ids";
 import { isAllowedWebhookUrl, newWebhookSecret } from "../../lib/webhooks";
@@ -56,11 +57,11 @@ const toolSchema = z.object({
 });
 const previewSchema = z.object({ message: z.string().trim().min(1).max(2000) });
 
-/** The AI assistant's settings, knowledge and tools. Writes: owners (dashboard) or keys with assistant:write. */
+/** The AI assistant's settings, knowledge and tools. Writes: owners and admins (dashboard) or keys with assistant:write. */
 export const assistantRoutes = new Hono<AppEnv>();
 
 function requireWriter(c: AppContext): void {
-  if (!c.get("apiKey")) requireOwner(c.get("agent"));
+  requirePermission(c, "assistant.manage");
 }
 
 function toAssistantTool(row: AssistantToolRow): AssistantTool {
@@ -89,7 +90,9 @@ assistantRoutes.get("/", async (c) => c.json<AssistantSettings>(toAssistantSetti
 assistantRoutes.patch("/", async (c) => {
   requireWriter(c);
   const patch = await readBody(c, settingsSchema);
+  const keys = changedKeys(await getAssistant(c.env), patch);
   const saved = await saveAssistant(c.env, patch);
+  if (keys.length) audit(c, "assistant.settings_updated", { type: "assistant", id: "workspace" }, { keys });
   // Turned off: conversations it was answering go to the team as they are.
   if (patch.enabled === false) {
     await c.env.DB.prepare("UPDATE conversations SET ai_state = 'off', ai_lock_until = NULL WHERE ai_state = 'active'").run();
@@ -109,12 +112,15 @@ assistantRoutes.put("/openrouter-key", async (c) => {
   if (check.status === 401 || check.status === 403) throw badRequest("OpenRouter refused this key");
   if (!check.ok) throw badRequest(`OpenRouter answered HTTP ${check.status}; try again`);
   const saved = await saveAssistant(c.env, { openRouterKeySealed: await sealOpenRouterKey(c.env, key) });
+  audit(c, "assistant.key_set", { type: "assistant", id: "openrouter-key" });
   return c.json(toAssistantSettings(saved));
 });
 
 assistantRoutes.delete("/openrouter-key", async (c) => {
   requireWriter(c);
-  return c.json(toAssistantSettings(await saveAssistant(c.env, { openRouterKeySealed: null })));
+  const saved = await saveAssistant(c.env, { openRouterKeySealed: null });
+  audit(c, "assistant.key_removed", { type: "assistant", id: "openrouter-key" });
+  return c.json(toAssistantSettings(saved));
 });
 
 assistantRoutes.get("/usage", async (c) => {
@@ -176,6 +182,7 @@ assistantRoutes.post("/knowledge", async (c) => {
     .bind(id, input.kind, input.title, input.body, input.locale ?? null, now, now)
     .run();
   const row = await c.env.DB.prepare("SELECT * FROM knowledge_items WHERE id = ?").bind(id).first<KnowledgeRow>();
+  audit(c, "assistant.knowledge_created", { type: "knowledge", id }, { title: input.title.slice(0, 120) });
   return c.json<KnowledgeItem>(toKnowledgeItem(row!), 201);
 });
 
@@ -195,6 +202,7 @@ assistantRoutes.patch("/knowledge/:id", async (c) => {
     )
     .run();
   const updated = await c.env.DB.prepare("SELECT * FROM knowledge_items WHERE id = ?").bind(row.id).first<KnowledgeRow>();
+  audit(c, "assistant.knowledge_updated", { type: "knowledge", id: row.id }, { title: updated!.title.slice(0, 120), keys: Object.keys(input) });
   return c.json(toKnowledgeItem(updated!));
 });
 
@@ -202,6 +210,7 @@ assistantRoutes.delete("/knowledge/:id", async (c) => {
   requireWriter(c);
   const result = await c.env.DB.prepare("DELETE FROM knowledge_items WHERE id = ?").bind(c.req.param("id")).run();
   if (!result.meta.changes) throw notFound("Knowledge item not found");
+  audit(c, "assistant.knowledge_deleted", { type: "knowledge", id: c.req.param("id") });
   return c.json({ ok: true });
 });
 
@@ -229,6 +238,7 @@ assistantRoutes.post("/tools", async (c) => {
     .bind(id, input.name, input.description, JSON.stringify(input.inputSchema), input.url, input.enabled ? 1 : 0, now, now)
     .run();
   const row = await c.env.DB.prepare("SELECT * FROM assistant_tools WHERE id = ?").bind(id).first<AssistantToolRow>();
+  audit(c, "assistant.tool_created", { type: "assistant_tool", id }, { name: input.name, url: input.url });
   return c.json(toAssistantTool(row!), 201);
 });
 
@@ -257,6 +267,7 @@ assistantRoutes.patch("/tools/:id", async (c) => {
     )
     .run();
   const updated = await c.env.DB.prepare("SELECT * FROM assistant_tools WHERE id = ?").bind(row.id).first<AssistantToolRow>();
+  audit(c, "assistant.tool_updated", { type: "assistant_tool", id: row.id }, { name: updated!.name, keys: Object.keys(input) });
   return c.json(toAssistantTool(updated!));
 });
 
@@ -264,6 +275,7 @@ assistantRoutes.delete("/tools/:id", async (c) => {
   requireWriter(c);
   const result = await c.env.DB.prepare("DELETE FROM assistant_tools WHERE id = ?").bind(c.req.param("id")).run();
   if (!result.meta.changes) throw notFound("Tool not found");
+  audit(c, "assistant.tool_deleted", { type: "assistant_tool", id: c.req.param("id") });
   return c.json({ ok: true });
 });
 
@@ -272,5 +284,6 @@ assistantRoutes.post("/tools/roll-secret", async (c) => {
   requireWriter(c);
   const secret = newWebhookSecret();
   await saveAssistant(c.env, { toolSecretSealed: await sealToolSecret(c.env, secret) });
+  audit(c, "assistant.tool_secret_rolled", { type: "assistant", id: "tool-secret" });
   return c.json({ secret });
 });

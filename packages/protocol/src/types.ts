@@ -1,6 +1,8 @@
 // Shapes shared by the server, the dashboard, the web widget and the React Native SDK.
 // Timestamps are Unix epoch milliseconds.
 
+import type { AgentRole } from "./permissions";
+
 export type Locale = "en" | "fr";
 export type LocalizedText = Partial<Record<Locale, string>>;
 
@@ -9,7 +11,6 @@ export type AuthorType = "contact" | "agent" | "system";
 /** `note` is internal to the team and is never sent to a contact. */
 export type MessageKind = "text" | "note" | "event";
 export type Channel = "web" | "ios" | "android";
-export type AgentRole = "owner" | "agent";
 export type ReplyTime = "minutes" | "hour" | "day";
 
 export type AttributeValue = string | number | boolean | null;
@@ -167,6 +168,8 @@ export interface AdminSettings extends WidgetSettings {
   webhookUrl: string | null;
   hasWebhookSecret: boolean;
   retentionDays: number;
+  /** Days the audit log is kept (at least 30). */
+  auditRetentionDays: number;
 }
 
 export interface CannedResponse {
@@ -420,4 +423,99 @@ export interface AssistantUsage {
   replies: number;
   costUsd: number;
   budgetUsd: number;
+}
+
+// ---- Audit log ----
+
+/** Everything the audit log records. Grouped by the part before the dot. */
+export const AUDIT_ACTIONS = [
+  "auth.setup",
+  "auth.sign_in",
+  "auth.sign_in_failed",
+  "auth.sign_out",
+  "auth.sso_sign_in",
+  "auth.sso_failed",
+  "auth.invite_accepted",
+  "profile.password_changed",
+  "settings.updated",
+  "settings.webhook_secret_rolled",
+  "sso.updated",
+  "team.invite_created",
+  "team.member_created",
+  "team.invite_revoked",
+  "team.role_changed",
+  "team.disabled",
+  "team.enabled",
+  "api_key.created",
+  "api_key.revoked",
+  "webhook_endpoint.created",
+  "webhook_endpoint.updated",
+  "webhook_endpoint.deleted",
+  "webhook_endpoint.secret_rolled",
+  "assistant.settings_updated",
+  "assistant.key_set",
+  "assistant.key_removed",
+  "assistant.knowledge_created",
+  "assistant.knowledge_updated",
+  "assistant.knowledge_deleted",
+  "assistant.tool_created",
+  "assistant.tool_updated",
+  "assistant.tool_deleted",
+  "assistant.tool_secret_rolled",
+  "contact.exported",
+  "contact.erased",
+  "saved_reply.created",
+  "saved_reply.updated",
+  "saved_reply.deleted",
+] as const;
+export type AuditAction = (typeof AUDIT_ACTIONS)[number];
+export type AuditCategory = AuditAction extends `${infer C}.${string}` ? C : never;
+export const AUDIT_CATEGORIES = [...new Set(AUDIT_ACTIONS.map((a) => a.split(".")[0]!))] as AuditCategory[];
+
+export interface AuditEntry {
+  id: string;
+  actor: { type: "agent" | "api_key" | "system"; id: string | null; name: string | null };
+  action: AuditAction;
+  target: { type: string; id: string | null } | null;
+  /** Which settings keys changed, old and new roles, failure reasons… never secret values. */
+  details: Record<string, unknown>;
+  ip: string | null;
+  userAgent: string | null;
+  createdAt: number;
+}
+
+// ---- Single sign-on (OpenID Connect) ----
+
+export interface SsoSettings {
+  enabled: boolean;
+  /** e.g. https://accounts.google.com, https://login.microsoftonline.com/<tenant>/v2.0 */
+  issuer: string;
+  clientId: string;
+  /** The client secret is stored sealed and never returned. */
+  hasClientSecret: boolean;
+  /** Email domains allowed to sign in (at least one when enabled). */
+  allowedDomains: string[];
+  /** Everyone except owners must use SSO; owners keep their password as a way back in. */
+  requireSso: boolean;
+  /** Role given to people who sign in for the first time without an invite; null: invite only. */
+  createRole: "agent" | "viewer" | null;
+  /** Paste this in the provider as the redirect URI. */
+  callbackUrl: string;
+}
+
+export interface SsoSettingsPatch {
+  enabled?: boolean;
+  issuer?: string;
+  clientId?: string;
+  /** A new secret; null removes it. */
+  clientSecret?: string | null;
+  allowedDomains?: string[];
+  requireSso?: boolean;
+  createRole?: "agent" | "viewer" | null;
+}
+
+/** What GET /api/agent/auth/status tells the sign-in page. */
+export interface AuthStatus {
+  needsSetup: boolean;
+  sso: { enabled: boolean; required: boolean };
 }

@@ -6,6 +6,7 @@ import { getConversation, markRead, postMessage, updateConversation } from "../.
 import type { ConversationRow, MessageRow } from "../../db/rows";
 import { loadAgents, toAgentConversations, toAttachment, toMessages } from "../../db/serialize";
 import { badRequest } from "../../lib/errors";
+import { requirePermission } from "../../lib/permissions";
 import { inboxHub } from "../../lib/realtime";
 import { storeUpload } from "../../lib/uploads";
 
@@ -143,6 +144,7 @@ inboxRoutes.get("/:id/messages", async (c) => {
 });
 
 inboxRoutes.post("/:id/messages", async (c) => {
+  requirePermission(c, "inbox.reply");
   const agent = c.get("agent");
   await limit(c.env.WRITE_LIMITER, `agent:${agent.id}`);
   const conversation = await getConversation(c.env, c.req.param("id"));
@@ -161,6 +163,7 @@ inboxRoutes.post("/:id/messages", async (c) => {
 });
 
 inboxRoutes.patch("/:id", async (c) => {
+  requirePermission(c, "inbox.update");
   const conversation = await getConversation(c.env, c.req.param("id"));
   const patch = await readBody(c, patchSchema);
   const updated = await updateConversation(
@@ -180,6 +183,7 @@ inboxRoutes.patch("/:id", async (c) => {
 });
 
 inboxRoutes.post("/:id/read", async (c) => {
+  requirePermission(c, "inbox.update");
   const at = await markRead(c.env, await getConversation(c.env, c.req.param("id")), "agent");
   return c.json({ at });
 });
@@ -187,6 +191,7 @@ inboxRoutes.post("/:id/read", async (c) => {
 export const attachmentRoutes = new Hono<AppEnv>();
 
 attachmentRoutes.post("/", async (c) => {
+  requirePermission(c, "inbox.reply");
   const agent = c.get("agent");
   await limit(c.env.WRITE_LIMITER, `upload:${agent.id}`);
   const row = await storeUpload(c.env, await c.req.formData(), { type: "agent", id: agent.id });

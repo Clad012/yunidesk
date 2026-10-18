@@ -4,7 +4,8 @@ import { publicOrigin, type AppEnv } from "../../app-env";
 import type { AttachmentRow, ContactRow, ConversationRow, MessageRow } from "../../db/rows";
 import { toContact, toMessages } from "../../db/serialize";
 import { badRequest, notFound } from "../../lib/errors";
-import { requireOwner } from "../../lib/agent-session";
+import { audit } from "../../lib/audit";
+import { requirePermission } from "../../lib/permissions";
 import { contactChannel, inboxHub, notifyAgents } from "../../lib/realtime";
 import { deleteObjects } from "../../lib/uploads";
 import { CONTACT_VISIBLE_SQL } from "../../db/conversations";
@@ -72,6 +73,7 @@ contactAdminRoutes.get("/:id", async (c) => {
 
 /** Right of access / portability (GDPR art. 15 and 20): everything we hold about one contact. */
 contactAdminRoutes.get("/:id/export", async (c) => {
+  requirePermission(c, "contacts.export");
   const contact = await findContact(c.env.DB, c.req.param("id"));
   const { results: conversations } = await c.env.DB.prepare(
     "SELECT * FROM conversations WHERE contact_id = ? ORDER BY created_at",
@@ -101,6 +103,7 @@ contactAdminRoutes.get("/:id/export", async (c) => {
       })),
     });
   }
+  audit(c, "contact.exported", { type: "contact", id: contact.id }, { conversations: conversations.length });
   const profile = toContact(contact);
   const body = JSON.stringify(
     { exportedAt: new Date().toISOString(), contact: { ...profile, online: undefined }, conversations: exported },
@@ -118,7 +121,7 @@ contactAdminRoutes.get("/:id/export", async (c) => {
 
 /** Right to erasure (GDPR art. 17): the contact, their conversations, messages and files. */
 contactAdminRoutes.delete("/:id", async (c) => {
-  requireOwner(c.get("agent"));
+  requirePermission(c, "contacts.erase");
   const contact = await findContact(c.env.DB, c.req.param("id"));
   const { results: files } = await c.env.DB.prepare(
     `SELECT r2_key FROM attachments
@@ -144,6 +147,8 @@ contactAdminRoutes.delete("/:id", async (c) => {
   ]);
   // Rewrites the search index so the erased words don't linger in old index segments.
   await c.env.DB.prepare("INSERT INTO messages_fts(messages_fts) VALUES('optimize')").run();
+  // The id only: who the contact was is exactly what was erased.
+  audit(c, "contact.erased", { type: "contact", id: contact.id }, { deletedFiles: files.length });
   c.executionCtx.waitUntil(
     Promise.all([
       contactChannel(c.env, contact.id).disconnectAll(),

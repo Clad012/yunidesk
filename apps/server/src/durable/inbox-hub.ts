@@ -5,6 +5,8 @@ import { contactChannel } from "../lib/realtime";
 
 interface SocketInfo {
   agent: PublicAgent;
+  /** False for viewers (read-only roles): their typing frames are ignored. Absent on older sockets. */
+  canType?: boolean;
 }
 
 const ONLINE_PREFIX = "online:";
@@ -33,7 +35,7 @@ export class InboxHub extends DurableObject<Env> {
     const { 0: client, 1: server } = new WebSocketPair();
     // Tagged by agent and by session, so a logout, a disabled account or a password change can cut them.
     this.ctx.acceptWebSocket(server, [agent.id, `session:${session}`]);
-    server.serializeAttachment({ agent } satisfies SocketInfo);
+    server.serializeAttachment({ agent, canType: request.headers.get("x-agent-can-type") !== "0" } satisfies SocketInfo);
 
     const onlineAgentIds = this.onlineAgentIds();
     server.send(JSON.stringify({ type: "ready", onlineAgentIds } satisfies AgentServerEvent));
@@ -111,7 +113,7 @@ export class InboxHub extends DurableObject<Env> {
     }
     if (event.type !== "typing" || typeof event.conversationId !== "string") return;
     const info = ws.deserializeAttachment() as SocketInfo | null;
-    if (!info) return;
+    if (!info || info.canType === false) return;
     const isTyping = Boolean(event.isTyping);
 
     // Teammates see who is replying, so two people don't answer at once.
