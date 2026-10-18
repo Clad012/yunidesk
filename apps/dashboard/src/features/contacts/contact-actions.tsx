@@ -6,7 +6,7 @@ import { copy, fmt } from "@/lib/copy";
 import { errorMessage } from "@/lib/api";
 import { endpoints } from "@/lib/endpoints";
 import { applyEvent } from "@/lib/realtime/apply-event";
-import { useBootstrap, useIsOwner } from "@/hooks/use-bootstrap";
+import { useBootstrap, useCan } from "@/hooks/use-bootstrap";
 import { Button } from "@/components/ui/button";
 import {
   AlertDialog,
@@ -21,9 +21,10 @@ import {
 } from "@/components/ui/alert-dialog";
 import { contactLabel } from "@/features/inbox/lib/labels";
 
-/** Owner-only GDPR actions: export everything, or erase the contact. */
+/** GDPR actions, for the roles allowed: export everything, or erase the contact. */
 export function ContactActions({ contact, onDeleted }: { contact: Contact; onDeleted: () => void }) {
-  const isOwner = useIsOwner();
+  const canExport = useCan("contacts.export");
+  const canErase = useCan("contacts.erase");
   const { agent } = useBootstrap();
   const qc = useQueryClient();
   const remove = useMutation({
@@ -35,16 +36,18 @@ export function ContactActions({ contact, onDeleted }: { contact: Contact; onDel
     },
     onError: (error) => toast.error(errorMessage(error, copy.common.somethingWrong)),
   });
-  if (!isOwner) return null;
+  if (!canExport && !canErase) return null;
 
   return (
     <div className="flex flex-col gap-1.5">
-      <Button asChild variant="outline" size="sm" className="justify-start">
-        <a href={endpoints.contactExportUrl(contact.id)} download>
-          <DownloadIcon /> {copy.contactPanel.exportData}
-        </a>
-      </Button>
-      <AlertDialog>
+      {canExport ? (
+        <Button asChild variant="outline" size="sm" className="justify-start">
+          <a href={endpoints.contactExportUrl(contact.id)} download>
+            <DownloadIcon /> {copy.contactPanel.exportData}
+          </a>
+        </Button>
+      ) : null}
+      {canErase ? <AlertDialog>
         <AlertDialogTrigger asChild>
           <Button variant="ghost" size="sm" className="justify-start text-destructive hover:bg-destructive/10 hover:text-destructive">
             <Trash2Icon /> {copy.contactPanel.deleteContact}
@@ -62,7 +65,7 @@ export function ContactActions({ contact, onDeleted }: { contact: Contact; onDel
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
-      </AlertDialog>
+      </AlertDialog> : null}
     </div>
   );
 }

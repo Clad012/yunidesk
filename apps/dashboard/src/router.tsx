@@ -26,6 +26,8 @@ const loginRoute = createRoute({
     const status = await endpoints.authStatus().catch(() => ({ needsSetup: false }));
     if (status.needsSetup) throw redirect({ to: "/setup" });
   },
+  validateSearch: (search: Record<string, unknown>): { sso_error?: string } =>
+    typeof search.sso_error === "string" ? { sso_error: search.sso_error } : {},
   component: LoginPage,
 });
 

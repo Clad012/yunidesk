@@ -3,7 +3,7 @@ import { z } from "zod";
 import { CHANNELS, MAX_REPORT_DAYS } from "yunidesk";
 import type { AppContext, AppEnv } from "../../app-env";
 import { reportSummary, reportTags, reportTeammates, reportVolume, type ReportPeriod } from "../../db/reports";
-import { requireOwner } from "../../lib/agent-session";
+import { requirePermission } from "../../lib/permissions";
 import { badRequest } from "../../lib/errors";
 import { toCsv } from "../../lib/reports/csv";
 import { dayNumber, isIsoDay, isValidTimeZone } from "../../lib/reports/time";
@@ -53,12 +53,12 @@ function csvResponse(c: AppContext, name: string, period: ReportPeriod, body: st
 const seconds = (ms: number | null) => (ms === null ? null : Math.round(ms / 1000));
 const percent = (ratio: number | null) => (ratio === null ? null : Math.round(ratio * 1000) / 10);
 
-/** Reports. Owners in the dashboard, or API keys with reports:read. */
+/** Reports. Teammates with reports.view (owners, admins), or API keys with reports:read. */
 export const reportRoutes = new Hono<AppEnv>();
 
 reportRoutes.use("*", async (c, next) => {
-  // TODO(roles): check the "reports.view" permission (owners and admins) instead of owner only.
-  if (!c.get("apiKey")) requireOwner(c.get("agent"));
+  // Owners and admins; API keys were already checked for reports:read.
+  requirePermission(c, "reports.view");
   c.header("cache-control", "no-store");
   await next();
 });

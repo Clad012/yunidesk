@@ -62,6 +62,10 @@ export interface ConversationRow {
   human_replied: number;
   ai_involved: number;
   reopened_count: number;
+  /** When the away message was last sent (business hours); once per closed period. */
+  away_notified_at: number | null;
+  /** Email conversations: the subject of the first email. */
+  subject: string | null;
 }
 
 export interface TagRow {
@@ -94,6 +98,15 @@ export interface MessageRow {
   created_at: number;
   /** 1 when the AI assistant wrote it. */
   ai: number;
+  // Email channel (all NULL for chat messages).
+  email_direction: "inbound" | "outbound" | null;
+  email_message_id: string | null;
+  email_in_reply_to: string | null;
+  email_status: "pending" | "sent" | "failed" | null;
+  email_error: string | null;
+  email_attempts: number;
+  email_next_attempt_at: number | null;
+  email_verified: number | null;
 }
 
 export interface AttachmentRow {

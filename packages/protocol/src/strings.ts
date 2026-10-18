@@ -104,6 +104,18 @@ const en = {
   stillNeedHelp: "Still need help?",
   stillNeedHelpHint: "Send us a message and we'll sort it out.",
   askAQuestion: "Ask a question",
+  // Business hours
+  awayBack: "We're away — back {when}",
+  awayNoReturn: "We're away right now",
+  backAt: "Back {when}",
+  backToday: "today at {time}",
+  backTomorrow: "tomorrow at {time}",
+  backWeekday: "{day} at {time}",
+  backDate: "on {date} at {time}",
+  awayMessageDefault: "Thanks for your message! We're away right now, and we'll reply as soon as we're back.",
+  handedOffAway: "We've passed you to the team. We're away right now — back {when}.",
+  // Help center
+  openInHelpCenter: "Open in the help center",
 };
 
 export type SupportStrings = typeof en;
@@ -211,6 +223,18 @@ const fr: SupportStrings = {
   stillNeedHelp: "Besoin d'aide supplémentaire ?",
   stillNeedHelpHint: "Envoyez-nous un message, on s'en occupe.",
   askAQuestion: "Poser une question",
+  // Horaires d'ouverture
+  awayBack: "Nous sommes absents — de retour {when}",
+  awayNoReturn: "Nous sommes absents pour le moment",
+  backAt: "De retour {when}",
+  backToday: "aujourd'hui à {time}",
+  backTomorrow: "demain à {time}",
+  backWeekday: "{day} à {time}",
+  backDate: "le {date} à {time}",
+  awayMessageDefault: "Merci pour votre message ! Nous sommes absents pour le moment et vous répondrons dès notre retour.",
+  handedOffAway: "Nous vous avons transmis à l'équipe. Nous sommes absents pour le moment — de retour {when}.",
+  // Centre d'aide
+  openInHelpCenter: "Ouvrir dans le centre d'aide",
 };
 
 const dictionaries: Record<Locale, SupportStrings> = { en, fr };
@@ -264,7 +288,7 @@ export function formatDayLabel(strings: SupportStrings, at: number, now = Date.n
 }
 
 export function formatClock(at: number, locale: Locale = "en"): string {
-  return new Date(at).toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit" });
+  return new Date(at).toLocaleTimeString(locale, { hour: "numeric", minute: "2-digit" });
 }
 
 function startOfDay(at: number): number {

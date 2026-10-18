@@ -1,4 +1,4 @@
-import { AlarmClockIcon, CircleCheckIcon, FlagIcon, HandIcon, RotateCcwIcon, UserRoundIcon, type LucideIcon } from "lucide-react";
+import { AlarmClockIcon, CircleCheckIcon, Clock3Icon, FlagIcon, HandIcon, MailWarningIcon, RotateCcwIcon, UserRoundIcon, type LucideIcon } from "lucide-react";
 import type { SystemEvent, TimelineMessage } from "yunidesk";
 import { copy, fmt } from "@/lib/copy";
 import { formatClock, formatUntil } from "@/lib/time";
@@ -18,6 +18,10 @@ export function eventText(event: SystemEvent): string {
       return copy.events.handedOff;
     case "priority":
       return fmt(copy.events.priority, { agent, priority: copy.priority[event.priority] });
+    case "away":
+      return copy.events.away;
+    case "email_failed":
+      return event.reason ? fmt(copy.emailMessage.failedEvent, { reason: event.reason }) : copy.emailMessage.failedEventNoReason;
   }
 }
 
@@ -28,6 +32,8 @@ const ICONS: Record<SystemEvent["type"], LucideIcon> = {
   assigned: UserRoundIcon,
   handed_off: HandIcon,
   priority: FlagIcon,
+  away: Clock3Icon,
+  email_failed: MailWarningIcon,
 };
 
 export function EventRow({ message }: { message: TimelineMessage }) {

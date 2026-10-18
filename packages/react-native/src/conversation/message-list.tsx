@@ -66,7 +66,7 @@ export function MessageList({
         case "day":
           return <DaySeparator at={item.at} now={now} locale={locale} theme={theme} strings={strings} />;
         case "event":
-          return <EventRow message={item.message} theme={theme} strings={strings} />;
+          return <EventRow message={item.message} now={now} locale={locale} theme={theme} strings={strings} />;
         case "typing":
           return <TypingRow agent={item.agent} teamName={teamName} theme={theme} strings={strings} />;
         case "assistantDraft":

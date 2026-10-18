@@ -7,14 +7,19 @@ import { assertTrustedOrigin, requireAgent } from "../../lib/agent-session";
 import { authenticateApiKey, toApiKey, type ApiKeyRow } from "../../lib/api-keys";
 import { forbidden, unauthorized } from "../../lib/errors";
 import { inboxHub } from "../../lib/realtime";
+import { can } from "../../lib/permissions";
 import { getSettings, toAdminSettings } from "../../lib/settings";
 import { apiKeyRoutes } from "./api-keys";
 import { assistantRoutes } from "./assistant";
+import { auditLogRoutes } from "./audit-log";
 import { contactAdminRoutes } from "./contacts";
 import { conversationFieldRoutes } from "./conversation-fields";
+import { emailRoutes } from "./email";
 import { attachmentRoutes, inboxRoutes } from "./inbox";
 import { reportRoutes } from "./reports";
 import { conversationTagRoutes, tagRoutes } from "./tags";
+import { pushRoutes } from "./push";
+import { ssoRoutes } from "./sso";
 import { teamRoutes } from "./team";
 import { webhookEndpointRoutes } from "./webhook-endpoints";
 
@@ -83,6 +88,8 @@ agentRoutes.get("/ws", async (c) => {
   const headers = new Headers(c.req.raw.headers);
   headers.set("x-agent", encodeURIComponent(JSON.stringify(toPublicAgent(agent))));
   headers.set("x-agent-session", c.get("sessionHash"));
+  // Viewers watch: their typing signals are dropped.
+  headers.set("x-agent-can-type", can(agent.role, "inbox.reply") ? "1" : "0");
   return inboxHub(c.env).fetch(new Request(c.req.raw.url, { headers }));
 });
 
@@ -95,5 +102,9 @@ agentRoutes.route("/contacts", contactAdminRoutes);
 agentRoutes.route("/api-keys", apiKeyRoutes);
 agentRoutes.route("/assistant", assistantRoutes);
 agentRoutes.route("/webhook-endpoints", webhookEndpointRoutes);
+agentRoutes.route("/push", pushRoutes);
+agentRoutes.route("/email", emailRoutes);
+agentRoutes.route("/audit-log", auditLogRoutes);
+agentRoutes.route("/sso", ssoRoutes);
 agentRoutes.route("/reports", reportRoutes);
 agentRoutes.route("/", teamRoutes);

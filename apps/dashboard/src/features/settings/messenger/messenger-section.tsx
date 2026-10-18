@@ -27,14 +27,14 @@ function ToggleRow({ label, hint, checked, disabled, onChange }: { label: string
 
 export function MessengerSection() {
   const form = useSettingsForm(KEYS);
-  const { value: s, isOwner } = form;
+  const { value: s, canEdit } = form;
   const [lang, setLang] = useState<Lang>("en");
-  const disabled = !isOwner;
+  const disabled = !canEdit;
   const setText = (key: "greeting" | "intro", text: string) => form.set(key, { ...s[key], [lang]: text } as LocalizedText);
   const validColor = /^#[0-9a-fA-F]{6}$/.test(s.brandColor);
 
   return (
-    <SettingsPage title={copy.messenger.title} subtitle={copy.messenger.subtitle} ownerOnly={!isOwner}>
+    <SettingsPage title={copy.messenger.title} subtitle={copy.messenger.subtitle} ownerOnly={!canEdit}>
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
         <div className="flex flex-col gap-4">
           <SettingsCard>

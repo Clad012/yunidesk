@@ -9,7 +9,7 @@ The full API is described in OpenAPI 3.1 at `https://<your-yunidesk>/api/openapi
 
 ## API keys
 
-Create one in **Settings → API keys** (owners only). Pick a name, the name shown on its replies, its scopes and an expiry. The key is shown **once**; Yunidesk stores only its SHA-256 hash.
+Create one in **Settings → API keys** (owners and admins). Pick a name, the name shown on its replies, its scopes and an expiry. The key is shown **once**; Yunidesk stores only its SHA-256 hash.
 
 ```
 Authorization: Bearer ydk_3f9k2m…
@@ -24,8 +24,8 @@ Authorization: Bearer ydk_3f9k2m…
 
 | Scope | Allows |
 |---|---|
-| `conversations:read` | `GET /key`, `/teammates`, `/conversations`, `/conversations/counts`, `/conversations/:id`, `/conversations/:id/messages`, `/tags`, `/conversation-fields` |
-| `conversations:write` | `POST /conversations/:id/messages` (reply or note), `PATCH /conversations/:id` (status, snooze, assignee, priority, custom field values), `POST /conversations/:id/tags`, `DELETE /conversations/:id/tags/:tagId`, `POST /tags`, `POST /attachments` |
+| `conversations:read` | `GET /key`, `/teammates`, `/conversations`, `/conversations/counts`, `/conversations/:id`, `/conversations/:id/messages`, `/conversations/:id/messages/:messageId/email` (the whole inbound email), `/tags`, `/conversation-fields` |
+| `conversations:write` | `POST /conversations/:id/messages` (reply or note; in an email conversation the reply is sent as an email), `PATCH /conversations/:id` (status, snooze, assignee, priority, custom field values), `POST /conversations/:id/tags`, `DELETE /conversations/:id/tags/:tagId`, `POST /tags`, `POST /attachments` |
 | `contacts:read` | `GET /contacts`, `/contacts/:id` |
 | `webhooks:write` | `/webhook-endpoints` (only the endpoints this key created) |
 | `reports:read` | `GET /reports/summary`, `/reports/volume`, `/reports/teammates`, `/reports/tags` (`?from=&to=&tz=&channel=&tagId=&assigneeId=`; the tables also as `format=csv`) |
@@ -109,9 +109,9 @@ The signature is HMAC-SHA256 of `"<t>.<raw body>"`. Deliveries more than 5 minut
 An assistant can answer customers first, from your knowledge and your tools, before the team does. Configure it in **Settings → Assistant** or with a key that has `assistant:write` (`yunidesk.assistant.*` in `yunidesk/api`).
 
 - **Model:** any OpenRouter model, `z-ai/glm-5.3-flash` by default. Set your OpenRouter key from your server or the dashboard. It is checked with OpenRouter, stored encrypted and never returned. **Never put it in a website or an app**, and give it a credit limit at openrouter.ai.
-- **Knowledge:** FAQ entries and articles. For each question, the best matches (full-text search) are given to the model. FAQ entries are also listed, with a search box, in the Help section of the messenger's Home screen; articles are read by the assistant only. Give an entry a language (`locale`: `en` or `fr`) to show it only to customers using that language; without one it shows to everyone. Everything you add can be quoted to any customer, so never put secrets in it.
+- **Knowledge:** FAQ entries and articles. For each question, the best matches (full-text search) are given to the model. FAQ entries are also listed, with a search box, in the Help section of the messenger's Home screen; articles are read by the assistant only. Give an entry a language (`locale`: `en` or `fr`) to show it only to customers using that language; without one it shows to everyone. Everything you add can be quoted to any customer, so never put secrets in it. Items marked `published` also get a public page in the help center (`/help/<locale>/<slug>`, see [ARCHITECTURE.md](ARCHITECTURE.md#help-center)); set `slug`, `category`, `position` and `translationOf` (the id of the item it translates) on create or `PATCH /assistant/knowledge/:id`.
 - **Tools:** a name, a description, a JSON schema and an https URL on your server. Yunidesk POSTs `{ id, tool, arguments, conversationId, contact, createdAt }`, signed like webhooks with the tools' secret (`POST /assistant/tools/roll-secret`, verify with `verifyWebhookSignature`). `contact.externalId` is your user id when the customer was identified with a signed token. Trust it only when `contact.isIdentified` is true. Answer JSON within 8 seconds.
-- **In the messenger:** replies stream in live. Every AI message is labelled and has a **Talk to a human** button, which hands the conversation to the team (it shows as a marker on both sides). A teammate's reply also takes over.
+- **In the messenger:** replies stream in live. Every AI message is labelled and has a **Talk to a human** button, which hands the conversation to the team (it shows as a marker on both sides). A teammate's reply also takes over. Outside business hours (Settings → Business hours) the hand-off marker says when the team is back; conversations the assistant doesn't answer get the away message instead (an `away` event in `GET /conversations/{id}/messages`).
 - **Limits:**
   - 6 replies a minute per customer, and per IP for anonymous visitors.
   - 40 replies a day per customer.

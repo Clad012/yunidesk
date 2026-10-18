@@ -6,7 +6,7 @@ import { endpoints, queryKeys } from "@/lib/endpoints";
 import { Tip } from "@/components/ui/tooltip";
 import { ConnectionDot } from "./connection-dot";
 import { ProfileMenu } from "./profile-menu";
-import { useIsOwner } from "@/hooks/use-bootstrap";
+import { useCan } from "@/hooks/use-bootstrap";
 
 function RailLink({ to, label, icon: Icon, badge }: { to: "/inbox" | "/contacts" | "/reports" | "/settings"; label: string; icon: LucideIcon; badge?: number }) {
   return (
@@ -29,8 +29,7 @@ function RailLink({ to, label, icon: Icon, badge }: { to: "/inbox" | "/contacts"
 
 export function NavRail() {
   const counts = useQuery({ queryKey: queryKeys.counts, queryFn: endpoints.counts });
-  // TODO(roles): show it to everyone with the "reports.view" permission.
-  const canSeeReports = useIsOwner();
+  const canSeeReports = useCan("reports.view");
   return (
     <nav className="flex w-16 shrink-0 flex-col items-center gap-1.5 py-3">
       <Link to="/inbox" className="mb-3 flex size-9 items-center justify-center rounded-xl shadow-sm" aria-label={copy.appName}>

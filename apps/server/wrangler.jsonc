@@ -30,6 +30,10 @@
     // Create it with: wrangler r2 bucket create yunidesk-files --jurisdiction eu
     { "binding": "FILES", "bucket_name": "yunidesk-files", "jurisdiction": "eu" }
   ],
+  // Email channel (optional, Settings → Email): send replies with Cloudflare Email Service. Onboard the
+  // domain of your from address first (wrangler email sending enable example.com), then uncomment.
+  // Without it, replies go through Resend when RESEND_API_KEY is set.
+  // "send_email": [{ "name": "SEND_EMAIL" }],
   "durable_objects": {
     "bindings": [
       { "name": "CONTACT_CHANNEL", "class_name": "ContactChannel" },
@@ -54,6 +58,9 @@
     // Origins allowed to embed the widget, in addition to the ones set in the dashboard.
     "ALLOWED_ORIGINS": "",
     // Origin used in links we hand out (files, invites, email confirmations).
+    // Email channel: the address customers write to. Can also be set in Settings → Email.
+    // Email Routing must send it, and reply+…@ the same domain, to this worker (see docs/DEPLOY.md).
+    // "EMAIL_INBOUND_ADDRESS": "support@example.com",
     "PUBLIC_URL": "https://support.example.com"
   }
 }

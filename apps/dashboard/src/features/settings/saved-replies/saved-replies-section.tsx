@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { copy } from "@/lib/copy";
 import { errorMessage } from "@/lib/api";
 import { endpoints, queryKeys } from "@/lib/endpoints";
+import { useCan } from "@/hooks/use-bootstrap";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { SettingsCard, SettingsPage } from "../settings-page";
@@ -14,6 +15,7 @@ import { DeleteCannedButton } from "./delete-canned-button";
 
 export function SavedRepliesSection() {
   const qc = useQueryClient();
+  const canManage = useCan("savedReplies.manage");
   const canned = useQuery({ queryKey: queryKeys.canned, queryFn: endpoints.canned });
   const [editing, setEditing] = useState<CannedResponse | null | "new">(null);
   const refresh = () => void qc.invalidateQueries({ queryKey: queryKeys.canned });
@@ -34,12 +36,14 @@ export function SavedRepliesSection() {
   const items = canned.data?.items ?? [];
 
   return (
-    <SettingsPage title={copy.canned.title} subtitle={copy.canned.subtitle}>
-      <div>
-        <Button onClick={() => (save.reset(), setEditing("new"))}>
-          <PlusIcon /> {copy.canned.new}
-        </Button>
-      </div>
+    <SettingsPage title={copy.canned.title} subtitle={copy.canned.subtitle} ownerOnly={!canManage}>
+      {canManage ? (
+        <div>
+          <Button onClick={() => (save.reset(), setEditing("new"))}>
+            <PlusIcon /> {copy.canned.new}
+          </Button>
+        </div>
+      ) : null}
       <SettingsCard>
         {canned.isPending ? (
           <Skeleton className="h-20 w-full" />
@@ -54,10 +58,14 @@ export function SavedRepliesSection() {
                   <p className="text-sm font-medium">{item.title}</p>
                   <p className="line-clamp-2 text-sm whitespace-pre-wrap text-muted-foreground">{item.body}</p>
                 </div>
-                <Button size="icon-xs" variant="ghost" aria-label={copy.common.edit} onClick={() => (save.reset(), setEditing(item))}>
-                  <PencilIcon />
-                </Button>
-                <DeleteCannedButton title={item.title} onConfirm={() => remove.mutate(item.id)} />
+                {canManage ? (
+                  <>
+                    <Button size="icon-xs" variant="ghost" aria-label={copy.common.edit} onClick={() => (save.reset(), setEditing(item))}>
+                      <PencilIcon />
+                    </Button>
+                    <DeleteCannedButton title={item.title} onConfirm={() => remove.mutate(item.id)} />
+                  </>
+                ) : null}
               </li>
             ))}
           </ul>

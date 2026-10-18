@@ -1,5 +1,5 @@
 import { Text, View } from "react-native";
-import { replyTimeLabel, type ContactConversation } from "yunidesk";
+import { isAwayNow, replyStatusLabel, type ContactConversation } from "yunidesk";
 import { conversationTitle } from "../logic/conversation-labels";
 import { useMessengerState, useSupportCore } from "../provider/support-context";
 import { TeamAvatars } from "../home/team-avatars";
@@ -16,8 +16,9 @@ export interface ConversationHeaderProps {
 
 /** The teammate who answered (or the team), with online state or the usual reply time. */
 export function ConversationHeader({ conversation, onBack, onClose, safeTop }: ConversationHeaderProps) {
-  const { config, theme, strings, connection } = useSupportCore();
-  const { teamOnline } = useMessengerState();
+  const { config, theme, strings, locale, connection } = useSupportCore();
+  const { teamOnline: online } = useMessengerState();
+  const teamOnline = online && !isAwayNow(config?.availability);
   const agent = conversation?.participants[0] ?? null;
   const title = conversation ? conversationTitle(conversation, config, strings) : (config?.teamName ?? strings.team);
   const subtitle =
@@ -26,7 +27,7 @@ export function ConversationHeader({ conversation, onBack, onClose, safeTop }: C
       : teamOnline
         ? strings.online
         : config
-          ? replyTimeLabel(strings, config.replyTime)
+          ? replyStatusLabel(strings, config, Date.now(), locale)
           : null;
   return (
     <ScreenHeader theme={theme} strings={strings} onBack={onBack} onClose={onClose} safeTop={safeTop}>

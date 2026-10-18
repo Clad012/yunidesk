@@ -15,6 +15,13 @@ export type Env = Omit<CloudflareBindings, "CONTACT_CHANNEL" | "INBOX_HUB" | "SE
   LEGACY_TOKEN_ISSUERS?: string;
   /** Also send the webhook signature under this header name (migrations). */
   WEBHOOK_LEGACY_SIGNATURE_HEADER?: string;
+  // ---- Email channel ----
+  /** Where customers email you (support@example.com); Email Routing sends it (and reply+…@ the same domain) to this worker. */
+  EMAIL_INBOUND_ADDRESS?: string;
+  /** Cloudflare Email Service binding (`send_email` in wrangler.jsonc) used to send replies. */
+  SEND_EMAIL?: SendEmail;
+  /** authserv-id of the Authentication-Results we trust (default mx.cloudflare.net). */
+  EMAIL_AUTHSERV_ID?: string;
   /** "development" in .dev.vars only. */
   ENVIRONMENT?: string;
 };

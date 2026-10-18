@@ -5,7 +5,8 @@ import { limit, readBody, type AppEnv } from "../../app-env";
 import { getConversation, labelsChanged } from "../../db/conversations";
 import type { TagRow } from "../../db/rows";
 import { normalizeTagName, toTag } from "../../db/tags";
-import { requireOwner } from "../../lib/agent-session";
+import { audit } from "../../lib/audit";
+import { requirePermission } from "../../lib/permissions";
 import { badRequest, conflict, notFound } from "../../lib/errors";
 import { newId } from "../../lib/ids";
 import { withOnline } from "./inbox";
@@ -65,6 +66,7 @@ tagRoutes.get("/", async (c) => {
 });
 
 tagRoutes.post("/", async (c) => {
+  requirePermission(c, "inbox.update");
   await limit(c.env.WRITE_LIMITER, `agent:${c.get("agent").id}`);
   const input = await readBody(c, createSchema);
   const row = await insertTag(c.env.DB, input.name, input.color);
@@ -72,7 +74,7 @@ tagRoutes.post("/", async (c) => {
 });
 
 tagRoutes.patch("/:id", async (c) => {
-  requireOwner(c.get("agent"));
+  requirePermission(c, "settings.manage");
   const input = await readBody(c, patchSchema);
   const sets: string[] = [];
   const values: unknown[] = [];
@@ -88,13 +90,15 @@ tagRoutes.patch("/:id", async (c) => {
     throw error;
   }
   if (!row) throw notFound("Tag not found");
+  if (sets.length) audit(c, "tag.updated", { type: "tag", id: row.id }, { keys: Object.keys(input) });
   return c.json(toTag(row));
 });
 
 tagRoutes.delete("/:id", async (c) => {
-  requireOwner(c.get("agent"));
+  requirePermission(c, "settings.manage");
   // conversation_tags rows go with it (ON DELETE CASCADE).
-  await c.env.DB.prepare("DELETE FROM tags WHERE id = ?").bind(c.req.param("id")).run();
+  const deleted = await c.env.DB.prepare("DELETE FROM tags WHERE id = ?").bind(c.req.param("id")).run();
+  if (deleted.meta.changes) audit(c, "tag.deleted", { type: "tag", id: c.req.param("id") });
   return c.json({ ok: true });
 });
 
@@ -103,6 +107,7 @@ tagRoutes.delete("/:id", async (c) => {
 export const conversationTagRoutes = new Hono<AppEnv>();
 
 conversationTagRoutes.post("/:id/tags", async (c) => {
+  requirePermission(c, "inbox.update");
   const agent = c.get("agent");
   await limit(c.env.WRITE_LIMITER, `agent:${agent.id}`);
   const conversation = await getConversation(c.env, c.req.param("id"));
@@ -147,6 +152,7 @@ conversationTagRoutes.post("/:id/tags", async (c) => {
 });
 
 conversationTagRoutes.delete("/:id/tags/:tagId", async (c) => {
+  requirePermission(c, "inbox.update");
   const agent = c.get("agent");
   const conversation = await getConversation(c.env, c.req.param("id"));
   const removed = await c.env.DB.prepare("DELETE FROM conversation_tags WHERE conversation_id = ? AND tag_id = ?")

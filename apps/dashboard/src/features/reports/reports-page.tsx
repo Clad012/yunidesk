@@ -1,5 +1,6 @@
 import { copy } from "@/lib/copy";
 import { endpoints } from "@/lib/endpoints";
+import { useCan } from "@/hooks/use-bootstrap";
 import { BusiestHours } from "./charts/busiest-hours";
 import { VolumeChart } from "./charts/volume-chart";
 import { MetricTiles } from "./metric-tiles";
@@ -12,8 +13,9 @@ import { useReportParams } from "./use-report-params";
 import { useReports } from "./use-reports";
 
 export function ReportsPage() {
+  const allowed = useCan("reports.view");
   const params = useReportParams();
-  const { summary, volume, teammates, tags } = useReports(params.query);
+  const { summary, volume, teammates, tags } = useReports(allowed ? params.query : null);
   const failed = [summary, volume, teammates, tags].find((q) => q.isError && !q.data);
   const retry = () => [summary, volume, teammates, tags].forEach((q) => void q.refetch());
   const quiet = summary.data && summary.data.current.created === 0 && summary.data.current.resolved === 0;
@@ -26,7 +28,9 @@ export function ReportsPage() {
       </header>
       <div className="min-h-0 flex-1 overflow-y-auto scrollbar-thin">
         <div className="mx-auto flex max-w-6xl flex-col gap-4 p-4 sm:p-6">
-          {!params.query ? null : failed ? (
+          {!allowed ? (
+            <ReportError error="forbidden" onRetry={() => undefined} />
+          ) : !params.query ? null : failed ? (
             <ReportError error={failed.error} onRetry={retry} />
           ) : !summary.data ? (
             <ReportSkeleton />

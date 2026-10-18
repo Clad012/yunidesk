@@ -15,14 +15,14 @@ export function ReportSkeleton() {
   );
 }
 
-/** Owners only (403), or anything else that went wrong, with a retry. */
+/** No access (403, or a role without reports.view), or anything else that went wrong, with a retry. */
 export function ReportError({ error, onRetry }: { error: unknown; onRetry: () => void }) {
-  const forbidden = error instanceof ApiError && error.status === 403;
+  const forbidden = error === "forbidden" || (error instanceof ApiError && error.status === 403);
   const Icon = forbidden ? LockIcon : TriangleAlertIcon;
   return (
     <div role="alert" className="flex flex-col items-center gap-3 rounded-xl bg-card px-6 py-16 text-center shadow-xs">
       <span className="flex size-11 items-center justify-center rounded-2xl bg-muted text-muted-foreground"><Icon className="size-5" /></span>
-      <p className="text-sm font-medium">{forbidden ? copy.reports.ownerOnly : copy.reports.loadFailed}</p>
+      <p className="text-sm font-medium">{forbidden ? copy.reports.noAccess : copy.reports.loadFailed}</p>
       {forbidden ? null : (
         <>
           <p className="max-w-md text-sm text-muted-foreground">{errorMessage(error, copy.common.somethingWrong)}</p>
